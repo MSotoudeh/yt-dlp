@@ -1,4 +1,0 @@
-yt-dlp
-
-[dev]
-pytest>=8

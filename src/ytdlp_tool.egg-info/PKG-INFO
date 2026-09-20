@@ -1,8 +1,0 @@
-Metadata-Version: 2.4
-Name: ytdlp-tool
-Version: 0.1.0
-Summary: Reusable yt-dlp automation toolkit
-Requires-Python: >=3.11
-Requires-Dist: yt-dlp
-Provides-Extra: dev
-Requires-Dist: pytest>=8; extra == "dev"
