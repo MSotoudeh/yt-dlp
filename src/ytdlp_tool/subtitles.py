@@ -87,3 +87,39 @@ def vtt_to_text(content: str) -> str:
         lines.append(line)
         previous = line
     return "\n".join(lines) + ("\n" if lines else "")
+
+
+_CUE_TIMING = re.compile(
+    r"^\s*((?:\d{2}:)?\d{2}:\d{2}[.,]\d{3})\s+-->\s+"
+    r"((?:\d{2}:)?\d{2}:\d{2}[.,]\d{3})"
+)
+
+
+def _srt_time(value: str) -> str:
+    if value.count(":") == 1:
+        value = f"00:{value}"
+    return value.replace(".", ",")
+
+
+def vtt_to_srt(content: str) -> str:
+    source = content.splitlines()
+    cues: list[str] = []
+    index = 0
+    while index < len(source):
+        match = _CUE_TIMING.match(source[index])
+        if not match:
+            index += 1
+            continue
+
+        timing = f"{_srt_time(match.group(1))} --> {_srt_time(match.group(2))}"
+        index += 1
+        text_lines: list[str] = []
+        while index < len(source) and source[index].strip():
+            line = _INLINE_TIMESTAMP.sub("", source[index])
+            line = unescape(_TAG.sub("", line)).strip()
+            if line and (not text_lines or line != text_lines[-1]):
+                text_lines.append(line)
+            index += 1
+        if text_lines:
+            cues.append(f"{len(cues) + 1}\n{timing}\n" + "\n".join(text_lines))
+    return "\n\n".join(cues) + ("\n" if cues else "")
