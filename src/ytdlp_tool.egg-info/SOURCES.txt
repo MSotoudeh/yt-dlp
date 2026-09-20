@@ -1,0 +1,10 @@
+pyproject.toml
+src/ytdlp_tool/__init__.py
+src/ytdlp_tool/subtitles.py
+src/ytdlp_tool.egg-info/PKG-INFO
+src/ytdlp_tool.egg-info/SOURCES.txt
+src/ytdlp_tool.egg-info/dependency_links.txt
+src/ytdlp_tool.egg-info/entry_points.txt
+src/ytdlp_tool.egg-info/requires.txt
+src/ytdlp_tool.egg-info/top_level.txt
+tests/test_subtitles.py
