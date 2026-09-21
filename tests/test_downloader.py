@@ -63,6 +63,7 @@ def test_download_vtt_prefers_manual_and_uses_subtitle_only_options(monkeypatch,
     assert result.source == "manual"
     options = FakeYoutubeDL.calls[-1]
     assert options["skip_download"] is True
+    assert options["noprogress"] is True
     assert options["writesubtitles"] is True
     assert options["writeautomaticsub"] is False
     assert options["subtitleslangs"] == ["en"]

@@ -40,6 +40,7 @@ def _inspect_options() -> dict:
     return {
         "quiet": True,
         "no_warnings": True,
+        "noprogress": True,
         "skip_download": True,
         "noplaylist": True,
     }
