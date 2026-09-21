@@ -1,2 +1,0 @@
-[console_scripts]
-ytdlp-tool = ytdlp_tool.cli:main
