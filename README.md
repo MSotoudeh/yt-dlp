@@ -168,6 +168,22 @@ Version 0.2 is unit-tested with fake yt-dlp adapters and has been integration-ch
 - a real two-second video+audio clip using yt-dlp ranges and ffmpeg;
 - the existing manual/automatic subtitle workflow from version 0.1.
 
+## ChatGPT private plugin
+
+The repository includes a skills-only private ChatGPT plugin source under `plugins/ytdl/`.
+When installed as **YTDL**, it maps `@YTDL` requests to the toolkit on the Ops machine through Remote Desktop Commander.
+
+Examples:
+
+```text
+@YTDL https://youtu.be/...                 # automatic subtitle -> TXT
+@YTDL formats https://youtu.be/...         # list formats
+@YTDL audio https://youtu.be/...           # extract MP3
+@YTDL clip https://youtu.be/... 01:30 02:10
+```
+
+The plugin is intentionally a thin invocation layer: the implementation remains in this repository rather than being duplicated in plugin instructions.
+
 ## Next layers
 
 The adapter is intentionally separated from the CLI so the same operations can later be exposed through an MCP/HTTP facade. Useful future additions include authenticated/cookie workflows, batch jobs, richer playlist policies, SponsorBlock/chapter actions, archive management, and machine-oriented task manifests.
