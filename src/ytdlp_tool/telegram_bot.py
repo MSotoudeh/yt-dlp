@@ -75,6 +75,8 @@ def main():
     args = ap.parse_args()
     token = os.environ.get("YTDL_TELEGRAM_BOT_TOKEN")
     if not token: ap.error("YTDL_TELEGRAM_BOT_TOKEN is required")
+    allowed = {x.strip() for x in os.environ.get("YTDL_ALLOWED_CHAT_IDS", "").split(",") if x.strip()}
+    if not allowed: ap.error("YTDL_ALLOWED_CHAT_IDS is required; public execution disabled")
     root = Path(args.root)
     root.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(root/"jobs.sqlite") as db:
@@ -84,7 +86,15 @@ def main():
             if not job:
                 offset = db.execute("SELECT COALESCE(MAX(update_id),0)+1 FROM jobs").fetchone()[0]
                 updates = api(token, "getUpdates", {"offset": offset, "timeout": 20, "allowed_updates": '["message"]'})
-                for update in updates: ingest(db, update)
+                for update in updates:
+                    chat_id = str(((update.get("message") or {}).get("chat") or {}).get("id", ""))
+                    if chat_id in allowed:
+                        ingest(db, update)
+                    else:
+                        # Record rejected IDs so polling offset advances without allowing work.
+                        db.execute("INSERT OR IGNORE INTO jobs(update_id,chat,mode,url,state) VALUES (?,?,?,?,?)",
+                                   (update["update_id"], 0, "rejected", "", "done"))
+                        db.commit()
             else:
                 uid, chat, mode, url = job
                 try:
