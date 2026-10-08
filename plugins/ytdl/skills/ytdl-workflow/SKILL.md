@@ -1,6 +1,6 @@
 ---
 name: ytdl-workflow
-description: Use whenever the YTDL plugin is explicitly invoked or the user asks to run their local yt-dlp toolkit on Ops for subtitles, metadata, formats, media downloads, thumbnails, playlists, clips, or comments.
+description: Use whenever the YTDL plugin is explicitly invoked or the user asks to run their local yt-dlp toolkit on Ops for subtitles, speech-to-text, metadata, media downloads, thumbnails, playlists, clips, or comments.
 ---
 
 # YTDL workflow
@@ -25,6 +25,8 @@ When the user invokes YTDL with only a YouTube URL and no operation, interpret i
 python -m ytdlp_tool subs "URL" --lang auto --format txt --output-dir output\chatgpt\subs
 ```
 
+For an Instagram Reel URL alone, default to `transcribe URL --video` so TXT/SRT and the video are produced together. Other YouTube-only URL behavior is unchanged.
+
 After completion, read the generated TXT file and return its contents or summarize it according to the user's request.
 
 ## Intent mapping
@@ -36,6 +38,14 @@ Map natural-language requests to these commands:
   - default language: `auto`
   - default format: `txt`
   - use `--list` when the user asks which subtitle languages exist
+- transcribe / speech-to-text / transcription:
+  `transcribe URL_OR_LOCAL_FILE --lang auto --model small --output-dir output\chatgpt\transcribe`
+  - Add `--video` if the user wants the video (or supplies only an Instagram Reel URL)
+  - Existing public captions are not required; output is both TXT and SRT
+  - On Ops use isolated Python: `& .\output\chatgpt\asr-venv\Scripts\python.exe -m ytdlp_tool transcribe ...`
+  - If the ASR environment is absent, install according to `docs/transcription.md` without modifying system Python
+  - Reuse the existing cache with `--model-dir output\chatgpt\asr-models`
+  - For Persian console output, set `$env:PYTHONIOENCODING='utf-8'`
 - metadata / info:
   `info URL`
 - formats / qualities / codecs:
@@ -77,6 +87,7 @@ If the exact requested tag is unavailable, report the available languages rather
 - TXT subtitles: read the generated TXT file on Ops and use that content directly.
 - SRT/VTT subtitles: read and return the requested text when practical; also report the remote saved path.
 - Video, audio, thumbnail, playlist downloads, and clips: report the exact saved path(s) on Ops and relevant operation details.
+- For transcription report TXT/SRT/audio paths and optional video, language and model; read the text when requested. Mention speech recognition mistakes.
 - Keep large outputs concise unless the user asks for the complete raw output.
 
 ## Errors and authentication
@@ -95,3 +106,5 @@ If the exact requested tag is unavailable, report the available languages rather
 - `@YTDL audio https://youtu.be/...` -> MP3 at default quality
 - `@YTDL clip https://youtu.be/... 01:30 02:10` -> selected time range
 - `@YTDL comments https://youtu.be/... 20` -> up to 20 comments
+- `@YTDL transcribe https://www.instagram.com/reel/... --lang fa` -> audio + TXT/SRT
+- `@YTDL https://www.instagram.com/reel/...` -> video + audio + transcript
