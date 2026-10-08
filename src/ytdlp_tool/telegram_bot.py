@@ -106,7 +106,7 @@ def main():
                         folder.mkdir(parents=True, exist_ok=True)
                         cmd = [args.python, "-m", "ytdlp_tool", mode, url, "--output-dir", str(folder)]
                         if mode == "transcribe": cmd += ["--model", "large-v3", "--model-dir", args.model_dir]
-                        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, encoding="utf-8", errors="replace")
+                        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, encoding="utf-8", errors="replace", env={**os.environ, "PYTHONIOENCODING": "utf-8"})
                         if proc.returncode: raise RuntimeError((proc.stderr or "processing failed")[-300:])
                         names = [p for p in folder.rglob("*") if p.is_file()]
                         if mode == "transcribe": names = [p for p in names if p.suffix in (".srt",".txt")]
