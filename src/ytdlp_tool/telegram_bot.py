@@ -88,7 +88,7 @@ def main():
                 updates = api(token, "getUpdates", {"offset": offset, "timeout": 20, "allowed_updates": '["message"]'})
                 for update in updates:
                     chat_id = str(((update.get("message") or {}).get("chat") or {}).get("id", ""))
-                    if chat_id in allowed:
+                    if chat_id in allowed or "*" in allowed:
                         ingest(db, update)
                     else:
                         # Record rejected IDs so polling offset advances without allowing work.
