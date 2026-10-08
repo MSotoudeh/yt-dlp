@@ -20,11 +20,12 @@ from .media import (
     list_formats,
 )
 from .subtitles import SubtitleUnavailableError
+from .transcribe import TranscriptionError, transcribe_media
 
 
 COMMANDS = {
     "subs", "info", "formats", "video", "audio",
-    "thumbnail", "playlist", "clip", "comments",
+    "thumbnail", "playlist", "clip", "comments", "transcribe",
 }
 
 
@@ -91,6 +92,15 @@ def build_command_parser() -> argparse.ArgumentParser:
     audio.add_argument("--codec", default="mp3")
     audio.add_argument("--quality", default="192")
     _add_output_dir(audio)
+
+    transcribe = sub.add_parser("transcribe", help="Download audio and transcribe speech to TXT/SRT")
+    transcribe.add_argument("source", help="HTTP(S) video URL or existing local media file")
+    transcribe.add_argument("--lang", default="auto", help="Language code, or auto detection")
+    transcribe.add_argument("--model", default="small", help="Whisper model (default: small)")
+    transcribe.add_argument("--model-dir", type=Path, default=None, help="Optional model cache directory")
+    transcribe.add_argument("--video", action="store_true", help="Also download original video")
+    transcribe.add_argument("--cpu-threads", type=int, default=8)
+    _add_output_dir(transcribe)
 
     thumb = sub.add_parser("thumbnail", help="Download thumbnail only")
     thumb.add_argument("url")
@@ -185,6 +195,21 @@ def _run_command(argv: list[str]) -> int:
         ))
         return 0
 
+    if args.command == "transcribe":
+        result = transcribe_media(
+            args.source, args.output_dir, args.lang, args.model,
+            model_dir=args.model_dir, download_original_video=args.video,
+            cpu_threads=args.cpu_threads,
+        )
+        print(f"Text: {result.txt_path}")
+        print(f"Subtitles: {result.srt_path}")
+        print(f"Audio: {result.audio_path}")
+        if result.video_path:
+            print(f"Video: {result.video_path}")
+        print(f"Language: {result.language}")
+        print(f"Segments: {result.segments}")
+        return 0
+
     if args.command == "thumbnail":
         _print_file_result(download_thumbnail(args.url, args.output_dir))
         return 0
@@ -231,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
     except (
         ValueError,
         MediaError,
+        TranscriptionError,
         SubtitleUnavailableError,
         SubtitleDownloadError,
     ) as exc:
