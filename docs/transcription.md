@@ -15,6 +15,18 @@ ffmpeg -version
 
 Whisper model weights are downloaded from Hugging Face on first use, then cached locally. Set `$env:PYTHONIOENCODING='utf-8'` if the Windows console cannot print Persian characters.
 
+### Large-v3 on Ops
+
+The full multilingual `faster-whisper large-v3` model is cached under `output\chatgpt\asr-models` on Ops. Its main CTranslate2 weight file is about 2.875 GiB. A local load test succeeded on CPU with `compute_type=int8` and 8 CPU threads.
+
+Use it when transcription accuracy matters more than speed:
+
+```powershell
+& .\output\chatgpt\asr-venv\Scripts\python.exe -m ytdlp_tool transcribe "URL_OR_LOCAL_FILE" --model large-v3 --model-dir output\chatgpt\asr-models --cpu-threads 8
+```
+
+The CLI default remains `small`; downloading `large-v3` does not change normal runs unless `--model large-v3` is selected explicitly.
+
 ## Usage
 
 ```powershell
