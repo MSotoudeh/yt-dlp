@@ -11,6 +11,8 @@ def parse(text):
     parts = text.strip().split(maxsplit=1)
     if parts and parts[0].split("@")[0] in ("/help", "/start"):
         return "help", ""
+    if len(parts) == 1 and parts[0].startswith('https://'):
+        parts = ['/audio', parts[0]]
     if len(parts) != 2:
         return None
     mode = parts[0].split("@")[0].lstrip("/").lower()
@@ -62,7 +64,14 @@ def ingest(db, item):
     msg = item.get("message") or {}
     chat = (msg.get("chat") or {}).get("id")
     if chat is None: return
-    parsed = parse(msg.get("text", "")) or ("help", "")
+    raw = msg.get("text", "")
+    parsed = parse(raw)
+    if parsed is None:
+        import re
+        candidate = re.search(r'https://(?:www\.)?(?:youtu\.be|youtube\.com|vimeo\.com)/[^\s<>]+', raw, re.I)
+        if candidate:
+            parsed = parse('/audio ' + candidate.group(0))
+    parsed = parsed or ("invalid", "")
     db.execute("INSERT OR IGNORE INTO jobs(update_id,chat,mode,url) VALUES (?,?,?,?)", (uid, chat, *parsed))
     db.commit()
 
@@ -100,6 +109,8 @@ def main():
                 try:
                     if mode == "help":
                         send(token, chat, "/video URL | /audio URL | /subs URL | /transcribe URL")
+                    elif mode == "invalid":
+                        send(token, chat, "Could not recognize a supported link. Send /audio https://youtu.be/VIDEO_ID")
                     else:
                         send(token, chat, "Job accepted: " + str(uid))
                         folder = root/"downloads"/str(uid)
