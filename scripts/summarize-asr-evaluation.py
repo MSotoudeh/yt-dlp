@@ -46,7 +46,7 @@ for human,model in models:
             status=d.get("status","unknown")
             seconds=d.get("seconds")
             chars=d.get("characters")
-            note=(d.get("error","") or "")[:140].replace("|","/")
+            note=(d.get("error","") or "")[:140].replace("|","/").replace(chr(13)," ").replace(chr(10)," ")
             if status=="complete" and source.exists() and source.read_text(encoding="utf-8").strip():
                 status="valid_txt"
                 break
@@ -69,5 +69,5 @@ lines+=["","## Delivery and limitations","",
  "- Production Telegram bot remains unchanged.",
 ]
 dest.parent.mkdir(exist_ok=True,parents=True)
-dest.write_text("\n".join(lines)+"\n",encoding="utf-8")
+dest.write_bytes(("\n".join(lines)+"\n").encode("utf-8"))
 print("REPORT_READY",dest.name,len(lines),"lines")
