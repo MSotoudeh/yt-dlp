@@ -43,3 +43,21 @@ The user judges C1Tech Base qualitatively best and Shenava Koochik worst. No val
 ## Restoring access to C1Tech Small
 
 Official model page: https://huggingface.co/C1Tech/whisper_small_persian . A human must accept the gated model owner's terms under an account authorized for weights, then authenticate that account on Ops for a local download; do not send access tokens into a chat.
+
+## Final GPU results (2026-10-09)
+
+The detached run `fc2923e1bb3c45e88bd2a9a18b45d0be` completed with exit code 0 in approximately 32 minutes. No cloud ASR API was used.
+
+- AmirMohseni CV17-derived CT2 INT8: CUDA `int8_float16`, beam 5, 19 chunks, 7,999 characters; model load 9.78 s, GPU benchmark 379.84 s, download 210.70 s, full trial 591.11 s. Status complete.
+- nezamisafa Persian v4: downloaded public FP32 weights in 868.30 s, converted locally to CT2 `int8_float16` (1,551,326,177-byte model.bin); CUDA, beam 5, 19 chunks, 9,398 characters; load 7.92 s, GPU benchmark 368.77 s, full trial 1321.73 s. Status complete.
+- C1Tech Small: HTTP 401 gated access; no authorized account or owner approval on Ops. No download or inference.
+
+Neither transcript length nor speed measures recognition accuracy. Human inspection or a corrected reference is required to compare these models with C1Tech Base.
+
+Post-run verification: both new trial model caches and temporary V4 converted weights are absent. C1Tech Base and the production large-v3 weights remain present. Disk free was 21,952,937,984 bytes at job end and 21,821,456,384 bytes later. The earlier 26,520,104,960-byte post-cleanup baseline was higher; the difference is not explained by the two trial model caches, which are absent.
+
+Delivery verified: the 15,816-byte Persian-ASR-next-three-GPU-comparison.zip passed zipfile.testzip(). It contains both new GPU transcripts and metrics plus C1Tech Base reference and a summary of the gated model. The detached job reported DELIVERED_PRIVATE_TELEGRAM_OK and wrote a delivery marker; no duplicate send was attempted.
+
+Tests: python -m pytest -q tests/test_evaluate_persian_asr_gold.py tests/test_transcribe.py: 10 passed in 0.49 s. Local GPU electricity cost not metered; no cloud ASR API used.
+
+Production bot warning: the Windows task YTDLP-Independent-Telegram-Bot was Ready, LastTaskResult=1, last run 2026-10-08 23:26:05, with no running telegram_bot Python process at the final check. It had appeared Running earlier. No production bot or model was changed or restarted; the observed change cannot be causally attributed to the ASR tests without separate diagnosis.
