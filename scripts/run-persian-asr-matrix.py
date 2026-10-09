@@ -20,12 +20,13 @@ def main():
  p.add_argument("--model",choices=MODELS,required=True)
  p.add_argument("--device",choices=("cpu","cuda"),required=True)
  p.add_argument("--audio",type=Path,required=True)
+ p.add_argument("--chunk-seconds",type=int,default=28,help="Chunk size (default 28 s); can reduce CUDA peak memory")
  p.add_argument("--output",type=Path,required=True)
  args=p.parse_args()
  args.output.mkdir(parents=True,exist_ok=True)
  stem=f"{args.model}-{args.device}"
  checkpoint=args.output/f"{stem}.json"
- log=dict(model=MODELS[args.model],device=args.device,status="starting")
+ log=dict(model=MODELS[args.model],device=args.device,status="starting",chunk_seconds=args.chunk_seconds)
  def status(s,**kw):
   log.update(status=s,**kw)
   checkpoint.write_text(json.dumps(log,ensure_ascii=False,indent=2),encoding="utf-8")
@@ -51,11 +52,11 @@ def main():
    loaded=time.monotonic()
    status("inference",load_seconds=round(loaded-t0,2))
    chunks=[]
-   for i,start in enumerate(range(0,len(wav),16000*28)):
-    res=m.transcribe(audio=(np.asarray(wav[start:start+16000*28],dtype=np.float32),16000),language="Persian")
+   for i,start in enumerate(range(0,len(wav),16000*args.chunk_seconds)):
+    res=m.transcribe(audio=(np.asarray(wav[start:start+16000*args.chunk_seconds],dtype=np.float32),16000),language="Persian")
     chunks.append(res[0].text)
     (args.output/f"{stem}.partial.txt").write_text("\n".join(chunks),encoding="utf-8")
-    print("CHUNK",i+1,"/",(len(wav)+16000*28-1)//(16000*28),flush=True)
+    print("CHUNK",i+1,"/",(len(wav)+16000*args.chunk_seconds-1)//(16000*args.chunk_seconds),flush=True)
    txt="\n".join(chunks)
   else:
    from transformers import pipeline
@@ -67,9 +68,9 @@ def main():
    status("inference",load_seconds=round(loaded-t0,2))
    chunks=[]
    # Fixed-length 28s sections permit progress and avoid model-specific timestamp issues.
-   for i,start in enumerate(range(0,len(wav),16000*28)):
-    arr=np.asarray(wav[start:start+16000*28],dtype=np.float32)
-    options={"task":"transcribe","language":"persian"}
+   for i,start in enumerate(range(0,len(wav),16000*args.chunk_seconds)):
+    arr=np.asarray(wav[start:start+16000*args.chunk_seconds],dtype=np.float32)
+    options={} if args.model=="buzz" else {"task":"transcribe","language":"fa"}
     # BuzzASR has custom vocabulary; forcing Whisper tokenizer language may not work.
     try:
      out=transcriber({"raw":arr,"sampling_rate":sr},generate_kwargs=options)
@@ -78,7 +79,7 @@ def main():
      out=transcriber({"raw":arr,"sampling_rate":sr})
     chunks.append(out["text"])
     (args.output/f"{stem}.partial.txt").write_text("\n".join(chunks),encoding="utf-8")
-    print("CHUNK",i+1,"/",(len(wav)+16000*28-1)//(16000*28),flush=True)
+    print("CHUNK",i+1,"/",(len(wav)+16000*args.chunk_seconds-1)//(16000*args.chunk_seconds),flush=True)
    txt="\n".join(chunks)
   (args.output/f"{stem}.txt").write_text(txt,encoding="utf-8")
   status("complete",seconds=round(time.monotonic()-t0,2),characters=len(txt),chunks=len(chunks))
