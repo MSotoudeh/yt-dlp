@@ -36,3 +36,10 @@ The blocked models are not counted as completed inference; do not misrepresent s
 - CUDA whisper.cpp log for first Givia segment reports **using CUDA0 backend**, with 1,623.92 MB model weights on the GPU; first chunk produced non-empty Persian text.
 - This is currently an **execution checkpoint**, not a completed quality ranking.
 - Do not run two GPU jobs concurrently. If publisher approves C1Tech Small mid-batch, coordinate GPU access first.
+
+## Recovery notes (2026-10-21)
+- First Givia GPU run decoded segments 1 and 2, then hit a per-segment 200s timeout on segment 3 while beam search was set to 5. This is an execution timeout, **not an accuracy finding**. CUDA0 usage was verified in the first-segment log.
+- Retry changes: Givia uses beam=1/best_of=1 and a 600s per-segment ceiling to reduce decode cost. No CPU inference allowed.
+- Initial MohammadGholizadeh run failed before GPU inference because its fine-tuned checkpoint does not bundle the full Whisper vocabulary/merges files needed by the slow tokenizer. Retry instead sources the official original `openai/whisper-large-v3-turbo` processor, while retaining the Persian fine-tuned **model weights**.
+- The serial supervisor is running and moved on to Qwen3-ASR 0.6B. After all first-pass model attempts, a dedicated retry supervisor reruns only Gholizadeh and Givia if not completed, validates a final ZIP, and attempts private Telegram delivery to the unique previously verified recipient.
+- Retry/Telegram durable run id: `234592fe0db04316bc06b615c3864d45`. Never paste any local Hugging Face or Telegram token into chat or Git.

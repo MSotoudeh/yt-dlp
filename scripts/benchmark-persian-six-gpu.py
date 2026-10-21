@@ -48,7 +48,7 @@ def run_whisper_hf(name,chunks,sr):
  from transformers import AutoProcessor,AutoModelForSpeechSeq2Seq
  repo=MODELS[name]
  report(name,"downloading_or_loading")
- proc=AutoProcessor.from_pretrained(repo,cache_dir=str(HF_CACHE),use_fast=False)
+ proc=AutoProcessor.from_pretrained("openai/whisper-large-v3-turbo",cache_dir=str(HF_CACHE),use_fast=True)
  model=AutoModelForSpeechSeq2Seq.from_pretrained(repo,cache_dir=str(HF_CACHE),torch_dtype=torch.float16,low_cpu_mem_usage=True,use_safetensors=True).to("cuda:0").eval()
  if next(model.parameters()).device.type!="cuda":raise RuntimeError("Model not on CUDA")
  lines=[]
@@ -118,8 +118,8 @@ def run_givia(name,chunks,sr):
   sf.write(str(wav),part,sr,subtype="PCM_16")
   pref=OUT/("givia-segment-%02d-output"%i)
   try:
-   cmd=[str(exe),"-m",str(model),"-f",str(wav),"-l","fa","-nt","-otxt","-of",str(pref),"-t","4"]
-   result=subprocess.run(cmd,capture_output=True,text=True,errors="replace",timeout=200)
+   cmd=[str(exe),"-m",str(model),"-f",str(wav),"-l","fa","-nt","-otxt","-of",str(pref),"-t","4","-bs","1","-bo","1"]
+   result=subprocess.run(cmd,capture_output=True,text=True,errors="replace",timeout=600)
    diag=result.stderr+"\n"+result.stdout
    if result.returncode:raise RuntimeError("whisper-cli failed: "+diag[-1400:])
    if i==1:
