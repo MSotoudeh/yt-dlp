@@ -27,6 +27,9 @@ def report(name,status,**kw):
   try:data=json.loads(p.read_text(encoding="utf-8"))
   except Exception:pass
  data.update(model=MODELS[name],device="cuda:0",status=status,**kw)
+ if status=="complete":
+  data.pop("error",None)
+  data.pop("traceback",None)
  p.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding="utf-8")
  print("MODEL",name,status,flush=True)
 
@@ -112,8 +115,16 @@ def run_givia(name,chunks,sr):
  report(name,"downloading")
  model=hf_hub_download(MODELS[name],filename="ggml-persian-v3-turbo.bin",cache_dir=str(HF_CACHE))
  report(name,"inference")
+ partial=OUT/(name+".partial.txt")
  lines=[]
+ if partial.is_file():
+  old=partial.read_text(encoding="utf-8").splitlines()
+  if 1<=len(old)<len(chunks) and all(len(x.strip())>=40 for x in old):
+   lines=old
+   print("GIVIA_RESUMING_VALIDATED_CHUNKS",len(lines),flush=True)
+ resumed_from=len(lines)
  for i,part in enumerate(chunks,1):
+  if i<=len(lines):continue
   wav=OUT/("givia-segment-%02d.wav"%i)
   sf.write(str(wav),part,sr,subtype="PCM_16")
   pref=OUT/("givia-segment-%02d-output"%i)
@@ -126,14 +137,22 @@ def run_givia(name,chunks,sr):
     (OUT/"givia-cuda-log-excerpt.txt").write_text(diag[-3500:],encoding="utf-8")
     if not any(v in diag.lower() for v in ("cuda","gpu")):
      raise RuntimeError("CUDA not evidenced in whisper-cli logs; reject CPU fallback")
-   text=(pref.with_suffix(".txt")).read_text(encoding="utf-8-sig").strip()
+   raw=pref.with_suffix(".txt").read_bytes()
+   text=raw.decode("utf-8-sig",errors="replace").strip()
+   bad=text.count("\ufffd")
+   if bad:
+    (OUT/("givia-segment-%02d-raw.bin"%i)).write_bytes(raw)
+    with (OUT/"givia-encoding-warnings.jsonl").open("a",encoding="utf-8") as warn:
+     warn.write(json.dumps({"segment":i,"replacement_characters":bad,"original_bytes_preserved":True})+"\n")
+    print("GIVIA_MALFORMED_UTF8_BYTES",i,"replacement_chars",bad,flush=True)
+   if bad>8:raise RuntimeError("Too many malformed UTF-8 bytes in segment "+str(i))
    lines.append(text)
    (OUT/(name+".partial.txt")).write_text("\n".join(lines),encoding="utf-8")
    print(name,"CHUNK",i,"/",len(chunks),"chars",len(text),flush=True)
   finally:
    wav.unlink(missing_ok=True)
    pref.with_suffix(".txt").unlink(missing_ok=True)
- return lines
+ return lines,resumed_from
 
 def run_meta(name,chunks,sr):
  try:from omnilingual_asr.models.inference.pipeline import ASRInferencePipeline
@@ -175,7 +194,11 @@ def main(name):
   torch=verify_cuda()
   chunks,sr=audio_chunks()
   report(name,"starting",chunks_expected=len(chunks),gpu=torch.cuda.get_device_name(0),gpu_total_memory_mb=round(torch.cuda.get_device_properties(0).total_memory/2**20))
-  if name in ("givia",):lines=run_givia(name,chunks,sr)
+  extra_metrics={}
+  if name=="givia":
+   lines,resumed_from=run_givia(name,chunks,sr)
+   extra_metrics={"timing_scope":"resumed_run_only" if resumed_from else "full_run",
+      "resumed_existing_chunks":resumed_from,"timed_chunks":len(lines)-resumed_from}
   elif name=="gholizadeh":lines=run_whisper_hf(name,chunks,sr)
   elif name=="wav2vec":lines=run_wav2vec(name,chunks,sr)
   elif name=="qwen06":lines=run_qwen(name,chunks,sr)
@@ -184,7 +207,7 @@ def main(name):
   content="\n".join(lines)
   if len(lines)!=19 or len(content)<1000:raise RuntimeError("Missing chunks or suspiciously empty transcript")
   (OUT/(name+".txt")).write_text(content,encoding="utf-8")
-  report(name,"complete",seconds=round(time.perf_counter()-began,2),characters=len(content),chunks=len(lines),gpu_only=True)
+  report(name,"complete",seconds=round(time.perf_counter()-began,2),characters=len(content),chunks=len(lines),gpu_only=True,**extra_metrics)
  except Exception as ex:
   report(name,"failed",seconds=round(time.perf_counter()-began,2),error=str(ex)[:900],traceback=traceback.format_exc()[-1800:])
   raise
