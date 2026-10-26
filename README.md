@@ -1,7 +1,7 @@
 # yt-dlp automation toolkit
 
 A reusable Python automation layer around upstream [yt-dlp](https://github.com/yt-dlp/yt-dlp).
-Version 0.2 expands the original subtitle-only workflow into a multi-command media toolkit while keeping the old subtitle CLI compatible.
+Version 0.3 adds optional local Whisper transcription for Instagram, YouTube and local files while keeping all previous commands compatible.
 
 ## Capabilities
 
@@ -15,7 +15,8 @@ The CLI now exposes these high-value yt-dlp workflows:
 - `thumbnail` — download the thumbnail without media;
 - `playlist` — inspect a playlist or explicitly download it;
 - `clip` — download only a selected time range;
-- `comments` — fetch a bounded number of comments as JSON.
+- `comments` — fetch a bounded number of comments as JSON;
+- `transcribe` — download media audio and generate spoken-text TXT and SRT with Whisper.
 
 Non-subtitle commands accept ordinary HTTP(S) URLs supported by yt-dlp extractors. The current subtitle workflow intentionally remains YouTube-only.
 
@@ -24,7 +25,8 @@ Non-subtitle commands accept ordinary HTTP(S) URLs supported by yt-dlp extractor
 - Python 3.11+
 - Internet access
 - `yt-dlp` (installed as a project dependency)
-- `ffmpeg` for audio extraction, clipping, and formats that require muxing
+- `ffmpeg` for audio extraction, clipping, and formats that require muxing, and transcription
+- Optional `faster-whisper` + `numpy` for speech-to-text (see [setup](docs/transcription.md))
 
 Subtitle VTT/SRT/TXT conversion itself does not require ffmpeg.
 
@@ -54,6 +56,7 @@ ytdlp-tool thumbnail URL [options]
 ytdlp-tool playlist URL [options]
 ytdlp-tool clip URL START END [options]
 ytdlp-tool comments URL [options]
+ytdlp-tool transcribe URL_OR_LOCAL_FILE [--lang auto] [--model small] [--video]
 ```
 
 The equivalent module form is `python -m ytdlp_tool ...`.
@@ -93,6 +96,10 @@ ytdlp-tool audio "URL" --codec mp3 --quality 192
 ```
 
 The default video selector is `bv*+ba/b`. Audio uses yt-dlp's best audio input and ffmpeg extraction.
+
+## Whisper speech-to-text (version 0.3)
+
+The optional `transcribe` command generates **TXT + time-coded SRT from actual audio**, even when a video has no captions. For an isolated one-time installation on Ops and working Instagram/YouTube/local-file examples, read [docs/transcription.md](docs/transcription.md).
 
 ## Thumbnail
 
@@ -151,6 +158,7 @@ src/ytdlp_tool/
   cli.py          command routing and human/machine-readable output
   downloader.py   subtitle retrieval and output
   media.py        metadata, formats, media, playlist, comments, and clip workflows
+  transcribe.py     Whisper-based transcription
   subtitles.py    subtitle language selection and VTT conversion
 
 tests/            unit tests
@@ -167,6 +175,22 @@ Version 0.2 is unit-tested with fake yt-dlp adapters and has been integration-ch
 - thumbnail-only download;
 - a real two-second video+audio clip using yt-dlp ranges and ffmpeg;
 - the existing manual/automatic subtitle workflow from version 0.1.
+
+## ChatGPT private plugin
+
+The repository includes a skills-only private ChatGPT plugin source under `plugins/ytdl/`.
+When installed as **YTDL**, it maps `@YTDL` requests to the toolkit on the Ops machine through Remote Desktop Commander.
+
+Examples:
+
+```text
+@YTDL https://youtu.be/...                 # automatic subtitle -> TXT
+@YTDL formats https://youtu.be/...         # list formats
+@YTDL audio https://youtu.be/...           # extract MP3
+@YTDL clip https://youtu.be/... 01:30 02:10
+```
+
+The plugin is intentionally a thin invocation layer: the implementation remains in this repository rather than being duplicated in plugin instructions.
 
 ## Next layers
 
