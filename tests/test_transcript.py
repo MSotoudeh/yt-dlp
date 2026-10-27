@@ -87,3 +87,66 @@ def test_non_youtube_is_rejected_before_network(monkeypatch, tmp_path):
     monkeypatch.setattr(transcript, "download_subtitle", lambda *a: pytest.fail("no network"))
     with pytest.raises(ValueError, match="Only YouTube"):
         transcript.get_preferred_transcript("https://evil.example/watch?v=123", tmp_path)
+
+
+def test_only_translated_youtube_captions_triggers_original_audio_asr(monkeypatch, tmp_path):
+    # Dutch speech, only Persian/English translated captions exist.
+    import ytdlp_tool.downloader as downloader
+    from ytdlp_tool.downloader import SubtitleCatalog
+
+    monkeypatch.setattr(
+        downloader, "inspect_video",
+        lambda url: SubtitleCatalog("abc123", "Dutch speech", ("fa",), ("en", "fa"), "nl"),
+    )
+    monkeypatch.setattr(
+        downloader, "YoutubeDL",
+        lambda *a, **kw: pytest.fail("YouTube translations must not be downloaded"),
+    )
+    called = []
+
+    def fake_asr(url, output_dir, language, model, **kwargs):
+        called.append((url, language))
+        return TranscriptResult(
+            tmp_path / "native.txt", tmp_path / "native.srt",
+            tmp_path / "native.mp3", None, "nl", 2,
+        )
+
+    monkeypatch.setattr(transcript, "transcribe_media", fake_asr)
+    result = transcript.get_preferred_transcript(URL, tmp_path, language="auto")
+    assert result.source == "asr"
+    assert result.language == "nl"
+    assert called == [(URL, "auto")]
+
+
+def test_original_english_preferred_over_persian_youtube_translation(monkeypatch, tmp_path):
+    import ytdlp_tool.downloader as downloader
+    from ytdlp_tool.downloader import SubtitleCatalog
+
+    monkeypatch.setattr(
+        downloader, "inspect_video",
+        lambda url: SubtitleCatalog("abc123", "English speech", ("en", "fa"), ("fa",), "en"),
+    )
+    captured = []
+
+    class FakeYDL:
+        def __init__(self, options):
+            captured.append(options)
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        def extract_info(self, url, download=False):
+            path = tmp_path / "English speech [abc123].en.vtt"
+            path.write_text("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello world\n", encoding="utf-8")
+            return {"requested_subtitles": {"en": {"filepath": str(path)}}}
+
+    monkeypatch.setattr(downloader, "YoutubeDL", FakeYDL)
+    monkeypatch.setattr(
+        transcript, "transcribe_media",
+        lambda *a, **kw: pytest.fail("Do not use ASR when native captions exist"),
+    )
+    result = transcript.get_preferred_transcript(URL, tmp_path)
+    assert result.source == "youtube_manual"
+    assert result.language == "en"
+    assert captured[-1]["subtitleslangs"] == ["en"]
+    assert result.paths[0].read_text(encoding="utf-8").strip() == "Hello world"

@@ -14,8 +14,8 @@ $env:YTDL_ALLOWED_CHAT_IDS = '<YOUR_PRIVATE_TELEGRAM_CHAT_ID>'
 ## YouTube transcript-first behavior
 
 - A plain YouTube URL (including a link inside a message) runs the `transcript` operation, NOT `/audio`.
-- Prefer YouTube manual captions, then original-language automatic captions (`fa-orig` where available). Save TXT with transcript text and report `source=youtube_manual` or `source=youtube_automatic`.
-- Only if a valid public caption track is absent or empty, download audio and use local Whisper as fallback; return TXT and SRT with `source=asr`.
+- Prefer manual captions **in the video's spoken language**, then automatic captions **in that same original language** (e.g. `de-orig` for German). Never auto-select YouTube's translated Persian, English or other tracks when the speech is in another language. Save original-language TXT and report `source=youtube_manual` or `source=youtube_automatic`.
+- If original-language captions cannot be identified confidently, are absent, or are empty, download the original audio and run local multilingual Whisper ASR; return original-language TXT/SRT with `source=asr`. Downstream LLM translation to Persian is optional and performed only when requested.
 - Errors such as 403, 429, and caption download timeouts are reported as errors rather than silently launching ASR. Caption retrieval may fail due to provider access conditions.
 - Explicit `/audio URL`, `/video URL`, `/subs URL`, and `/transcribe URL` retain their meanings. `/transcript URL` runs the new automatic selection explicitly.
 - Bot runs the ASR fallback with the existing isolated ASR Python environment and cached `large-v3` model. Successful caption runs avoid audio/video downloads and model inference altogether.

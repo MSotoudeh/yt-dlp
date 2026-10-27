@@ -25,7 +25,7 @@ When the user invokes YTDL with only a YouTube URL and no operation, interpret i
 & .\output\chatgpt\asr-venv\Scripts\python.exe -m ytdlp_tool transcript "URL" --lang auto --model large-v3 --model-dir output\chatgpt\asr-models --output-dir output\chatgpt\transcripts
 ```
 
-For a YouTube URL alone, prefer YouTube's published manual or automatic transcript in the video's spoken language, including `-orig` tracks. Only if no usable caption track exists, invoke Whisper ASR. Never treat YouTube access errors, timeouts, or caption-download failures as proof of absent captions; report them instead. Report transcript provenance (`youtube_manual`, `youtube_automatic`, or `asr`). For an Instagram Reel URL alone, default to `transcribe URL --video` so TXT/SRT and the video are produced together.
+For a YouTube URL alone, ONLY use YouTube's published captions in the video's original SPOKEN language (manual first, then native-language automatic, e.g. `de-orig`). Do not automatically select machine-translated Persian/English captions for non-Persian/non-English speech. If native captions are absent or cannot be reliably identified, run ASR on the ORIGINAL audio, retaining that original language; downstream LLM translation is a separate, optional operation. Never treat YouTube access errors, timeouts, or caption-download failures as proof of absent captions; report them instead. Report transcript provenance (`youtube_manual`, `youtube_automatic`, or `asr`). For an Instagram Reel URL alone, default to `transcribe URL --video` so TXT/SRT and the video are produced together.
 
 After completion, read the generated TXT file and return its contents or summarize it according to the user's request.
 
@@ -35,7 +35,7 @@ Map natural-language requests to these commands:
 
 - transcript / text of YouTube video / متن گفتار یوتیوب:
   `transcript URL --lang auto --model large-v3 --model-dir output\chatgpt\asr-models --output-dir output\chatgpt\transcripts`
-  - This is the DEFAULT for a bare YouTube URL; caption-first with local ASR only when no captions exist
+  - This is the DEFAULT for a bare YouTube URL; original-language caption-first, ASR if original-language captions are unavailable (even when translated tracks exist)
   - Do not download video/audio when a public caption track succeeds
 - subtitles / subs / captions / زیرنویس:
   `subs URL --lang LANG --format FORMAT`
@@ -83,7 +83,7 @@ When the user names an obvious language, map it to a standard subtitle tag when 
 - Persian / Farsi -> `fa`
 - Italian -> `it`
 
-If the exact requested tag is unavailable, report the available languages rather than silently choosing a different explicit language.
+For `--lang auto`, refuse a translation track unless it is confidently in the original spoken language; if YouTube language metadata is absent, accept only an unambiguous `-orig` track. If native subtitles cannot be identified, `transcript` falls back to multilingual ASR. Explicit language overrides remain separate and should never silently choose another language. Never automatically translate the original transcript to Persian.
 
 ## Returning results
 

@@ -29,10 +29,31 @@ def test_explicit_language_prefers_manual_subtitles():
     assert select_subtitle(manual, automatic, "en") == ("en", "manual")
 
 
-def test_auto_selection_prefers_manual_english_then_manual_then_auto():
-    assert select_subtitle({"en": [{}], "it": [{}]}, {"fa": [{}]}, "auto") == ("en", "manual")
-    assert select_subtitle({"it": [{}]}, {"en": [{}]}, "auto") == ("it", "manual")
-    assert select_subtitle({}, {"en": [{}], "fa": [{}]}, "auto") == ("en", "automatic")
+def test_auto_selection_requires_original_language_not_english_or_persian_translation():
+    manual = {"fa": [{}], "en": [{}]}
+    automatic = {"fa": [{}], "it-orig": [{}], "en": [{}]}
+    assert select_subtitle(manual, automatic, "auto", "it") == ("it-orig", "automatic")
+    with pytest.raises(SubtitleUnavailableError, match="original"):
+        select_subtitle(manual, {"fa": [{}], "en": [{}]}, "auto", "it")
+
+
+def test_when_original_language_unknown_use_original_tag_only():
+    assert select_subtitle({}, {"fa": [{}], "de-orig": [{}]}, "auto") == ("de-orig", "automatic")
+    assert select_subtitle({"de": [{}]}, {"fa": [{}], "de-orig": [{}]}, "auto") == ("de", "manual")
+    for manual, automatic in [
+        ({"fa": [{}]}, {"en": [{}]}),
+        ({}, {"en": [{}], "fa": [{}]}),
+        ({"it": [{}], "de": [{}]}, {}),
+        ({}, {"fa-orig": [{}], "en-orig": [{}]}),
+    ]:
+        with pytest.raises(SubtitleUnavailableError, match="Original"):
+            select_subtitle(manual, automatic, "auto")
+
+
+def test_declared_nonpersian_speech_uses_manual_original_not_translated_fa():
+    assert select_subtitle({"fa": [{}], "de": [{}]}, {"fa": [{}]}, "auto", "de") == ("de", "manual")
+    assert select_subtitle({}, {"de": [{}], "fa": [{}]}, "auto", "de") == ("de", "automatic")
+
 
 
 

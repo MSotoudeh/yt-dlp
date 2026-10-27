@@ -64,10 +64,10 @@ def select_subtitle(
             return automatic_key, "automatic"
         raise SubtitleUnavailableError(f"Subtitle language '{requested}' is unavailable")
 
-    # Prefer captions in the video's declared spoken language over a
-    # translation in an unrelated language.
+    # Auto selection NEVER uses captions translated into another language.
+    # The metadata language refers to the video's speech, not the user's UI.
     if original_language:
-        original = original_language.split("-")[0].split(".")[0]
+        original = original_language.split("-")[0].split(".")[0].lower()
         key = _matching_key(manual, original)
         if key:
             return key, "manual"
@@ -75,18 +75,24 @@ def select_subtitle(
                or _matching_key(automatic, original))
         if key:
             return key, "automatic"
+        raise SubtitleUnavailableError(
+            f"No captions in original spoken language '{original}'"
+        )
 
-    manual_en = _english_key(manual)
-    if manual_en:
-        return manual_en, "manual"
-    if manual:
-        return sorted(manual)[0], "manual"
-    automatic_en = _english_key(automatic)
-    if automatic_en:
-        return automatic_en, "automatic"
-    if automatic:
-        return sorted(automatic)[0], "automatic"
-    raise SubtitleUnavailableError("This video has no subtitles")
+    # When metadata is absent, an '-orig' track is stronger evidence of the
+    # spoken language than a translated automatic-caption language list.
+    original_tracks = sorted(key for key in automatic if key.endswith("-orig"))
+    original_bases = {key.split("-", 1)[0].split(".", 1)[0] for key in original_tracks}
+    if len(original_bases) == 1:
+        original = next(iter(original_bases))
+        key = _matching_key(manual, original)
+        if key:
+            return key, "manual"
+        return (_original_caption_key(automatic, original), "automatic")
+
+    # Without source-language evidence, neither manual tracks nor automatic
+    # translated tracks can safely be assumed to match the video's speech.
+    raise SubtitleUnavailableError("Original spoken-language captions unavailable")
 
 
 _TIMESTAMP = re.compile(r"^\s*(?:\d{2}:)?\d{2}:\d{2}[.,]\d{3}\s+-->\s+")
