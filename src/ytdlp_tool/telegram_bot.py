@@ -4,9 +4,13 @@ from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
-MODES = {"audio", "video", "subs", "transcribe", "transcript", "choose", "txt", "srt"}
+MODES = {"audio", "video", "subs", "transcribe", "transcript", "choose", "txt", "srt",
+         "ig_choose", "ig_caption", "ig_txt", "ig_srt"}
+ALIASES = {"igcaption": "ig_caption", "igtxt": "ig_txt",
+           "igsrt": "ig_srt", "caption": "ig_caption"}
 YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
-HOSTS = YOUTUBE_HOSTS | {"vimeo.com", "www.vimeo.com"}
+INSTAGRAM_HOSTS = {"instagram.com", "www.instagram.com", "m.instagram.com"}
+HOSTS = YOUTUBE_HOSTS | INSTAGRAM_HOSTS | {"vimeo.com", "www.vimeo.com"}
 
 def parse(text):
     parts = text.strip().split(maxsplit=1)
@@ -17,16 +21,25 @@ def parse(text):
             host = urlsplit(parts[0]).hostname
         except ValueError:
             return None
-        mode = '/choose' if host in YOUTUBE_HOSTS else '/audio'
+        mode = "/choose" if host in YOUTUBE_HOSTS else ("/ig_choose" if host in INSTAGRAM_HOSTS else "/audio")
         parts = [mode, parts[0]]
     if len(parts) != 2:
         return None
     mode = parts[0].split("@")[0].lstrip("/").lower()
+    mode = ALIASES.get(mode, mode)
     try:
         u = urlsplit(parts[1])
         if mode in MODES and u.scheme == "https" and u.hostname in HOSTS and u.port in (None, 443) and not u.username and not u.password:
             if mode in {"choose", "txt", "srt", "transcript", "subs"} and u.hostname not in YOUTUBE_HOSTS:
                 return None
+            if mode in {"ig_choose", "ig_caption", "ig_txt", "ig_srt"}:
+                if u.hostname not in INSTAGRAM_HOSTS:
+                    return None
+                from .instagram import validate_instagram_url
+                try:
+                    validate_instagram_url(parts[1])
+                except ValueError:
+                    return None
             return mode, parts[1]
     except ValueError:
         pass
@@ -48,7 +61,15 @@ def send(token, chat, text, *, keyboard=None):
     return api(token, "sendMessage", params)
 
 
-def format_keyboard(request_id):
+def format_keyboard(request_id, platform="youtube"):
+    if platform == "instagram":
+        return {"inline_keyboard": [
+            [{"text": "Caption - Post description", "callback_data": f"fmt:ig_caption:{request_id}"}],
+            [
+                {"text": "Speech TXT", "callback_data": f"fmt:ig_txt:{request_id}"},
+                {"text": "Speech SRT", "callback_data": f"fmt:ig_srt:{request_id}"},
+            ],
+        ]}
     return {"inline_keyboard": [[
         {"text": "TXT - Plain text", "callback_data": f"fmt:txt:{request_id}"},
         {"text": "SRT - Timed subtitles", "callback_data": f"fmt:srt:{request_id}"},
@@ -86,7 +107,7 @@ def ingest_callback(db, item):
     chat = (callback.get("message") or {}).get("chat") or {}
     chat_id = chat.get("id")
     sender = (callback.get("from") or {}).get("id")
-    match = re.fullmatch(r"fmt:(txt|srt):([0-9]+)", callback.get("data") or "")
+    match = re.fullmatch(r"fmt:(txt|srt|ig_caption|ig_txt|ig_srt):([0-9]+)", callback.get("data") or "")
     message = "Invalid or expired format selection."
     selected = None
     if match and chat_id is not None and sender is not None:
@@ -95,7 +116,12 @@ def ingest_callback(db, item):
             "SELECT chat,requester,url,selected FROM format_choices WHERE request_id=?",
             (original_id,),
         ).fetchone()
-        if choice and choice[0] == chat_id and choice[1] == sender:
+        choice_host = urlsplit(choice[2]).hostname if choice else None
+        matching_platform = (
+            (fmt in {"txt", "srt"} and choice_host in YOUTUBE_HOSTS)
+            or (fmt in {"ig_caption", "ig_txt", "ig_srt"} and choice_host in INSTAGRAM_HOSTS)
+        )
+        if choice and choice[0] == chat_id and choice[1] == sender and matching_platform:
             if choice[3]:
                 message = "A format has already been selected for this link."
             else:
@@ -132,12 +158,12 @@ def ingest(db, item):
     parsed = parse(raw)
     if parsed is None:
         import re
-        candidate = re.search(r'https://(?:www\.)?(?:youtu\.be|youtube\.com|vimeo\.com)/[^\s<>]+', raw, re.I)
+        candidate = re.search(r'https://(?:www\.)?(?:youtu\.be|youtube\.com|vimeo\.com|instagram\.com)/[^\s<>]+', raw, re.I)
         if candidate:
             parsed = parse(candidate.group(0))
     parsed = parsed or ("invalid", "")
     db.execute("INSERT OR IGNORE INTO jobs(update_id,chat,mode,url) VALUES (?,?,?,?)", (uid, chat, *parsed))
-    if parsed[0] == "choose":
+    if parsed[0] in {"choose", "ig_choose"}:
         requester = (msg.get("from") or {}).get("id")
         if requester is None and (msg.get("chat") or {}).get("type") == "private":
             requester = chat
@@ -190,35 +216,45 @@ def main():
                 uid, chat, mode, url = job
                 try:
                     if mode == "help":
-                        send(token, chat, "Send a YouTube link, then tap TXT (plain text) or SRT (timed subtitles). Direct commands: /txt URL | /srt URL | /transcript URL | /video URL | /audio URL | /subs URL | /transcribe URL")
+                        send(token, chat, "YouTube: choose TXT or SRT. Instagram: choose Caption (post text), Speech TXT, or Speech SRT. Direct: /txt URL | /srt URL | /igcaption URL | /igtxt URL | /igsrt URL | /audio URL | /video URL | /transcribe URL")
                     elif mode == "invalid":
-                        send(token, chat, "Could not recognize a supported link. Send https://youtu.be/VIDEO_ID")
-                    elif mode == "choose":
+                        send(token, chat, "Unsupported link. Send an Instagram /reel/ or /p/ link, or a YouTube video link.")
+                    elif mode in {"choose", "ig_choose"}:
                         choice = db.execute(
                             "SELECT requester FROM format_choices WHERE request_id=? AND chat=?",
                             (uid, chat),
                         ).fetchone()
                         if not choice:
                             raise RuntimeError("Format selection requires an identified sender")
-                        send(token, chat, "Choose original-language transcript format:",
-                             keyboard=format_keyboard(uid))
+                        if mode == "ig_choose":
+                            send(token, chat, "Instagram: choose post caption or spoken transcript format:",
+                                 keyboard=format_keyboard(uid, "instagram"))
+                        else:
+                            send(token, chat, "Choose original-language transcript format:",
+                                 keyboard=format_keyboard(uid))
                     else:
                         send(token, chat, "Job accepted: " + str(uid))
                         folder = root/"downloads"/str(uid)
                         folder.mkdir(parents=True, exist_ok=True)
-                        command_mode = "transcript" if mode in ("txt", "srt") else mode
-                        cmd = [args.python, "-m", "ytdlp_tool", command_mode, url, "--output-dir", str(folder)]
-                        if command_mode in ("transcribe", "transcript"):
+                        command_mode = {
+                            "txt": "transcript", "srt": "transcript",
+                            "ig_caption": "ig-caption",
+                            "ig_txt": "ig-speech", "ig_srt": "ig-speech",
+                        }.get(mode, mode)
+                        cmd = [args.python, "-m", "ytdlp_tool", command_mode, url,
+                               "--output-dir", str(folder)]
+                        if command_mode in ("transcribe", "transcript", "ig-speech"):
                             cmd += ["--model", "large-v3", "--model-dir", args.model_dir]
-                        if mode in ("txt", "srt"):
-                            cmd += ["--format", mode]
+                        if mode in ("txt", "srt", "ig_txt", "ig_srt"):
+                            cmd += ["--format", "srt" if mode.endswith("srt") else "txt"]
                         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, encoding="utf-8", errors="replace", env={**os.environ, "PYTHONIOENCODING": "utf-8"})
                         if proc.returncode: raise RuntimeError((proc.stderr or "processing failed")[-300:])
                         names = [p for p in folder.rglob("*") if p.is_file()]
-                        if command_mode in ("transcribe", "transcript"):
+                        if command_mode in ("transcribe", "transcript", "ig-caption", "ig-speech"):
                             names = [p for p in names if p.suffix in (".srt", ".txt")]
-                        if mode in ("txt", "srt"):
-                            names = [p for p in names if p.suffix == "." + mode]
+                        if mode in ("txt", "srt", "ig_caption", "ig_txt", "ig_srt"):
+                            selected_ext = "srt" if mode.endswith("srt") else "txt"
+                            names = [p for p in names if p.suffix == "." + selected_ext]
                         if not names: raise RuntimeError("No output files produced")
                         for path in names[:4]:
                             upload(token, chat, path)
@@ -235,6 +271,16 @@ def main():
                             notice = "YouTube transcript download timed out. Captions may exist; ASR was not run."
                         elif "403" in detail or "429" in detail or "forbidden" in detail:
                             notice = "YouTube captions were blocked or rate-limited. ASR was not run."
+                    elif mode in {"ig_caption", "ig_txt", "ig_srt"}:
+                        detail = str(exc).lower()
+                        if any(term in detail for term in ("403", "429", "login", "private", "rate-limit", "forbidden")):
+                            notice = "Instagram access denied or rate-limited. This bot supports only accessible public posts, without bypassing login."
+                        elif "caption is absent" in detail:
+                            notice = "This Instagram post has no accessible written caption."
+                        elif "no speech detected" in detail:
+                            notice = "No recognizable spoken audio in this Instagram video."
+                        elif "timed out" in detail:
+                            notice = "Instagram retrieval or speech recognition timed out."
                     try: send(token, chat, notice)
                     except Exception: pass
                 db.commit()

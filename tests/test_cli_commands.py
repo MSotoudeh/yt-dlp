@@ -123,3 +123,34 @@ def test_subs_list_subcommand(monkeypatch, capsys):
     assert code == 0
     assert "Manual: en" in output
     assert "Automatic: fa" in output
+
+
+def test_instagram_caption_cli_dispatches_metadata_only(monkeypatch, tmp_path, capsys):
+    from ytdlp_tool.instagram import InstagramTextResult
+    url = "https://www.instagram.com/reel/abc123/"
+    calls = []
+    def fake(url, output_dir):
+        calls.append((url, output_dir))
+        return InstagramTextResult(tmp_path / "caption.txt", "instagram_post_caption", None)
+    monkeypatch.setattr(cli, "extract_post_caption", fake)
+    assert cli.main(["ig-caption", url, "--output-dir", str(tmp_path)]) == 0
+    assert calls == [(url, tmp_path)]
+    assert "Source: instagram_post_caption" in capsys.readouterr().out
+
+
+def test_instagram_speech_cli_dispatches_format_model(monkeypatch, tmp_path, capsys):
+    from ytdlp_tool.instagram import InstagramTextResult
+    url = "https://www.instagram.com/reel/abc123/"
+    calls = []
+    def fake(url, output_dir, output_format, **kwargs):
+        calls.append((url, output_dir, output_format, kwargs["model"], kwargs["model_dir"]))
+        return InstagramTextResult(tmp_path / "speech.srt", "asr", "it")
+    monkeypatch.setattr(cli, "extract_spoken_text", fake)
+    assert cli.main([
+        "ig-speech", url, "--format", "srt", "--model", "large-v3",
+        "--model-dir", str(tmp_path / "models"), "--output-dir", str(tmp_path),
+    ]) == 0
+    assert calls == [(url, tmp_path, "srt", "large-v3", tmp_path / "models")]
+    output = capsys.readouterr().out
+    assert "Language: it" in output
+    assert "Source: asr" in output

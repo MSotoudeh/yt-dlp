@@ -25,7 +25,7 @@ When the user invokes YTDL with only a YouTube URL and no operation, interpret i
 & .\output\chatgpt\asr-venv\Scripts\python.exe -m ytdlp_tool transcript "URL" --lang auto --model large-v3 --model-dir output\chatgpt\asr-models --output-dir output\chatgpt\transcripts
 ```
 
-For a YouTube URL alone, ONLY use YouTube's published captions in the video's original SPOKEN language (manual first, then native-language automatic, e.g. `de-orig`). Do not automatically select machine-translated Persian/English captions for non-Persian/non-English speech. If native captions are absent or cannot be reliably identified, run ASR on the ORIGINAL audio, retaining that original language; downstream LLM translation is a separate, optional operation. Never treat YouTube access errors, timeouts, or caption-download failures as proof of absent captions; report them instead. Report transcript provenance (`youtube_manual`, `youtube_automatic`, or `asr`). For an Instagram Reel URL alone, default to `transcribe URL --video` so TXT/SRT and the video are produced together.
+For a YouTube URL alone, ONLY use YouTube's published captions in the video's original SPOKEN language (manual first, then native-language automatic, e.g. `de-orig`). Do not automatically select machine-translated Persian/English captions for non-Persian/non-English speech. If native captions are absent or cannot be reliably identified, run ASR on the ORIGINAL audio, retaining that original language; downstream LLM translation is a separate, optional operation. Never treat YouTube access errors, timeouts, or caption-download failures as proof of absent captions; report them instead. Report transcript provenance (`youtube_manual`, `youtube_automatic`, or `asr`). For an Instagram post or Reel URL alone, report that the Telegram bot offers three choices: written Caption, spoken TXT, spoken SRT. For direct YTDL requests, distinguish author's caption from spoken transcript; if the user does not specify which, retrieve the authored caption first, without any media download. Never silently download a full video for a text-only request.
 
 After completion, read the generated TXT file and return its contents or summarize it according to the user's request.
 
@@ -42,6 +42,13 @@ Map natural-language requests to these commands:
   - default language: `auto`
   - default format: `txt`
   - use `--list` when the user asks which subtitle languages exist
+- Instagram written post/Reel caption / text under post:
+  `ig-caption URL --output-dir output\\chatgpt\\instagram-caption`
+  - Reads metadata only, saves UTF-8 TXT; does not download audio/video or run ASR
+- Instagram spoken transcript:
+  `ig-speech URL --format txt|srt --model large-v3 --model-dir output\\chatgpt\\asr-models --output-dir output\\chatgpt\\instagram-speech`
+  - Local multilingual Whisper on original audio; SRT includes timestamps; no implicit translation
+  - The text burned into the video image requires separate OCR and is NOT included
 - transcribe / speech-to-text / transcription:
   `transcribe URL_OR_LOCAL_FILE --lang auto --model small --output-dir output\chatgpt\transcribe`
   - Add `--video` if the user wants the video (or supplies only an Instagram Reel URL)
@@ -111,4 +118,6 @@ For `--lang auto`, refuse a translation track unless it is confidently in the or
 - `@YTDL clip https://youtu.be/... 01:30 02:10` -> selected time range
 - `@YTDL comments https://youtu.be/... 20` -> up to 20 comments
 - `@YTDL transcribe https://www.instagram.com/reel/... --lang fa` -> audio + TXT/SRT
-- `@YTDL https://www.instagram.com/reel/...` -> video + audio + transcript
+- `@YTDL https://www.instagram.com/reel/...` -> fetch authored Caption TXT (metadata only), or ask whether speech TXT/SRT is intended if ambiguous
+- `@YTDL ig-caption https://www.instagram.com/reel/...` -> authored Caption TXT
+- `@YTDL ig-speech https://www.instagram.com/reel/... --format srt` -> original-language timed spoken transcript

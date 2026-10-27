@@ -166,3 +166,116 @@ def test_bot_inline_keyboard_offered_before_any_download(monkeypatch, tmp_path):
     bot.main()
     assert sent[0]["keyboard"]["inline_keyboard"][0][0]["callback_data"] == "fmt:txt:123"
     assert sent[0]["keyboard"]["inline_keyboard"][0][1]["callback_data"] == "fmt:srt:123"
+
+
+IG_URL = "https://www.instagram.com/reel/ABC_def1/"
+
+
+def test_instagram_bare_link_routes_to_three_choice_keyboard():
+    assert parse(IG_URL) == ("ig_choose", IG_URL)
+    assert parse("/igcaption " + IG_URL) == ("ig_caption", IG_URL)
+    assert parse("/caption " + IG_URL) == ("ig_caption", IG_URL)
+    assert parse("/igtxt " + IG_URL) == ("ig_txt", IG_URL)
+    assert parse("/igsrt " + IG_URL) == ("ig_srt", IG_URL)
+    assert parse("/igcaption https://www.instagram.com/stories/creator/123") is None
+    assert parse("/igcaption https://youtube.com/watch?v=test") is None
+    assert parse("/srt " + IG_URL) is None
+
+    db = sqlite3.connect(":memory:")
+    setup(db)
+    ingest(db, {"update_id": 302, "message": {
+        "chat": {"id": 71, "type": "private"}, "from": {"id": 71},
+        "text": "Watch this " + IG_URL,
+    }})
+    assert db.execute("SELECT mode,url FROM jobs").fetchone() == ("ig_choose", IG_URL)
+    keyboard = format_keyboard(302, "instagram")
+    buttons = [b for row in keyboard["inline_keyboard"] for b in row]
+    assert [b["callback_data"] for b in buttons] == [
+        "fmt:ig_caption:302", "fmt:ig_txt:302", "fmt:ig_srt:302",
+    ]
+
+
+def test_instagram_callback_enforces_owner_and_platform():
+    db = sqlite3.connect(":memory:")
+    setup(db)
+    ingest(db, {"update_id": 401, "message": {
+        "chat": {"id": 71, "type": "private"}, "from": {"id": 71},
+        "text": IG_URL,
+    }})
+    assert "Invalid" in ingest(db, _cb(402, 80, 71, "fmt:ig_txt:401"))
+    assert "Invalid" in ingest(db, _cb(403, 71, 71, "fmt:srt:401"))
+    assert ingest(db, _cb(404, 71, 71, "fmt:ig_srt:401")) == "Format IG_SRT selected."
+    assert db.execute("SELECT mode,url FROM jobs WHERE update_id=404").fetchone() == (
+        "ig_srt", IG_URL,
+    )
+    assert "already" in ingest(db, _cb(405, 71, 71, "fmt:ig_caption:401"))
+
+
+def test_instagram_keyboard_is_sent_without_download(monkeypatch, tmp_path):
+    import sys
+    import ytdlp_tool.telegram_bot as bot
+
+    with sqlite3.connect(tmp_path / "jobs.sqlite") as db:
+        setup(db)
+        ingest(db, {"update_id": 501, "message": {
+            "chat": {"id": 22, "type": "private"}, "from": {"id": 22},
+            "text": IG_URL,
+        }})
+    sent = []
+    monkeypatch.setattr(bot, "send", lambda token, chat, text, **kw: sent.append(kw))
+    monkeypatch.setattr(bot.subprocess, "run", lambda *a, **kw: (
+        _ for _ in ()).throw(AssertionError("Premature downloader invocation")))
+    monkeypatch.setenv("YTDL_TELEGRAM_BOT_TOKEN", "test-only")
+    monkeypatch.setenv("YTDL_ALLOWED_CHAT_IDS", "22")
+    monkeypatch.setattr(sys, "argv", [
+        "bot", "--once", "--root", str(tmp_path), "--model-dir", str(tmp_path),
+    ])
+    bot.main()
+    assert sent[0]["keyboard"]["inline_keyboard"][0][0]["callback_data"] == "fmt:ig_caption:501"
+
+
+def test_instagram_job_runs_only_selected_cli_workflow(monkeypatch, tmp_path):
+    import subprocess
+    import sys
+    import ytdlp_tool.telegram_bot as bot
+
+    for mode, command, fmt in [
+        ("ig_caption", "ig-caption", None),
+        ("ig_txt", "ig-speech", "txt"),
+        ("ig_srt", "ig-speech", "srt"),
+    ]:
+        root = tmp_path / mode
+        root.mkdir()
+        with sqlite3.connect(root / "jobs.sqlite") as db:
+            setup(db)
+            db.execute("INSERT INTO jobs(update_id,chat,mode,url) VALUES (?,?,?,?)",
+                       (123, 44, mode, IG_URL))
+            db.commit()
+        cmds, sent_files = [], []
+        def fake_run(cmd, **kwargs):
+            cmds.append(cmd)
+            output = root / "downloads" / "123"
+            output.mkdir(parents=True, exist_ok=True)
+            ext = fmt or "txt"
+            (output / ("result." + ext)).write_text("caption", encoding="utf-8")
+            (output / "audio.mp3").write_text("not sent", encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, 0, stdout="Source: asr\n", stderr="")
+
+        monkeypatch.setattr(bot.subprocess, "run", fake_run)
+        monkeypatch.setattr(bot, "send", lambda *a, **kw: None)
+        monkeypatch.setattr(bot, "upload", lambda token, chat, path: sent_files.append(path.suffix))
+        monkeypatch.setenv("YTDL_TELEGRAM_BOT_TOKEN", "test-only")
+        monkeypatch.setenv("YTDL_ALLOWED_CHAT_IDS", "44")
+        monkeypatch.setattr(sys, "argv", [
+            "bot", "--once", "--root", str(root), "--model-dir", str(root),
+        ])
+        bot.main()
+        assert cmds[0][cmds[0].index("ytdlp_tool") + 1] == command
+        if fmt is not None:
+            assert cmds[0][cmds[0].index("--format") + 1] == fmt
+            assert "large-v3" in cmds[0]
+        else:
+            assert "--model" not in cmds[0]
+        assert sent_files == ["." + (fmt or "txt")]
+        with sqlite3.connect(root / "jobs.sqlite") as db:
+            assert db.execute("SELECT state FROM jobs").fetchone() == ("done",)

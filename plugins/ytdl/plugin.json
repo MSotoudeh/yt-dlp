@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ytdl",
-  "version": "0.2.2",
-  "description": "Invoke the user's yt-dlp toolkit on Ops for original-language YouTube transcripts, optional ASR fallback and media tasks.",
+  "version": "0.2.3",
+  "description": "Use YTDL on Ops for original-language YouTube transcripts, Instagram post captions, spoken TXT/SRT and media tasks.",
   "author": {
     "name": "M. Sotoudeh"
   },
@@ -11,7 +11,7 @@
       "interface": {
         "displayName": "YTDL",
         "shortDescription": "Use yt-dlp on Ops",
-        "longDescription": "Extract original-language YouTube transcript tracks first, use local ASR only if original captions are unavailable. Also handle other media via Ops.",
+        "longDescription": "Get original-language YouTube captions, Instagram post descriptions, and Instagram spoken TXT/SRT using the Ops toolkit. No automatic translation.",
         "developerName": "M. Sotoudeh",
         "category": "Productivity",
         "capabilities": [
@@ -21,7 +21,7 @@
           "Extract this YouTube video transcript in its original spoken language; never auto-translate it.",
           "Show the available formats for this URL.",
           "Extract audio from this URL.",
-          "Transcribe speech in this Instagram Reel to TXT and SRT."
+          "Extract this Instagram Reel's written caption or spoken TXT/SRT."
         ]
       }
     }

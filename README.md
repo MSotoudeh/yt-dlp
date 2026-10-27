@@ -89,6 +89,18 @@ The `transcript` command prefers the caption track behind YouTube's **Show trans
 
 The independent Telegram bot displays inline **TXT (plain text)** and **SRT (timed subtitles)** buttons for a bare YouTube URL; `/txt URL` and `/srt URL` select a format directly. The CLI supports `transcript URL --format txt|srt` while preserving the existing no-`--format` behavior. Native YouTube SRT cues use their published timestamps and do not require ASR. `/audio`, `/subs` and `/transcribe` remain explicit overrides.
 
+## Instagram caption and speech
+
+The private `@You_TubeDL_bot` supports an Instagram post/Reel URL with three choices: **Caption** (the author's text in metadata, without downloading media), **Speech TXT**, or **Speech SRT** (local Whisper on the original spoken audio). OCR for text burned into video is not included. Only public content reachable through yt-dlp is supported without login; 403/login walls remain explicit errors.
+
+```powershell
+ytdlp-tool ig-caption "https://www.instagram.com/reel/SHORTCODE/"
+ytdlp-tool ig-speech "https://www.instagram.com/reel/SHORTCODE/" --format txt --model large-v3
+ytdlp-tool ig-speech "https://www.instagram.com/reel/SHORTCODE/" --format srt --model large-v3
+```
+
+Bot shortcuts: `/igcaption URL`, `/igtxt URL`, `/igsrt URL`.
+
 ## Metadata and formats
 
 ```powershell

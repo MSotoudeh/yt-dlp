@@ -19,6 +19,7 @@ from .media import (
     inspect_playlist,
     list_formats,
 )
+from .instagram import extract_post_caption, extract_spoken_text
 from .subtitles import SubtitleUnavailableError
 from .transcribe import TranscriptionError, transcribe_media
 from .transcript import get_preferred_transcript
@@ -27,6 +28,7 @@ from .transcript import get_preferred_transcript
 COMMANDS = {
     "subs", "info", "formats", "video", "audio",
     "thumbnail", "playlist", "clip", "comments", "transcribe", "transcript",
+    "ig-caption", "ig-speech",
 }
 
 
@@ -102,6 +104,18 @@ def build_command_parser() -> argparse.ArgumentParser:
     transcript.add_argument("--model-dir", type=Path, default=None)
     transcript.add_argument("--cpu-threads", type=int, default=8)
     _add_output_dir(transcript)
+
+    ig_caption = sub.add_parser("ig-caption", help="Save written caption of a public Instagram post or Reel")
+    ig_caption.add_argument("url")
+    _add_output_dir(ig_caption)
+
+    ig_speech = sub.add_parser("ig-speech", help="Transcribe spoken Instagram Reel audio to TXT or timed SRT")
+    ig_speech.add_argument("url")
+    ig_speech.add_argument("--format", choices=("txt", "srt"), default="txt", dest="output_format")
+    ig_speech.add_argument("--model", default="large-v3")
+    ig_speech.add_argument("--model-dir", type=Path, default=None)
+    ig_speech.add_argument("--cpu-threads", type=int, default=8)
+    _add_output_dir(ig_speech)
 
     transcribe = sub.add_parser("transcribe", help="Download audio and transcribe speech to TXT/SRT")
     transcribe.add_argument("source", help="HTTP(S) video URL or existing local media file")
@@ -186,6 +200,22 @@ def _run_command(argv: list[str]) -> int:
         )
         for path in result.paths:
             print(f"Saved: {path}")
+        print(f"Source: {result.source}")
+        print(f"Language: {result.language}")
+        return 0
+
+    if args.command == "ig-caption":
+        result = extract_post_caption(args.url, args.output_dir)
+        print(f"Saved: {result.path}")
+        print(f"Source: {result.source}")
+        return 0
+
+    if args.command == "ig-speech":
+        result = extract_spoken_text(
+            args.url, args.output_dir, args.output_format,
+            model=args.model, model_dir=args.model_dir, cpu_threads=args.cpu_threads,
+        )
+        print(f"Saved: {result.path}")
         print(f"Source: {result.source}")
         print(f"Language: {result.language}")
         return 0
