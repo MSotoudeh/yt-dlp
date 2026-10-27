@@ -35,6 +35,22 @@ def test_auto_selection_prefers_manual_english_then_manual_then_auto():
     assert select_subtitle({}, {"en": [{}], "fa": [{}]}, "auto") == ("en", "automatic")
 
 
+
+def test_original_spoken_language_beats_english_translation():
+    assert select_subtitle({"en": [{}]}, {"fa": [{}], "en": [{}]}, "auto", "fa") == ("fa", "automatic")
+    assert select_subtitle({"fa": [{}], "en": [{}]}, {"fa": [{}]}, "auto", "fa-IR") == ("fa", "manual")
+
+
+def test_original_track_precedes_translation_variant():
+    manual = {}
+    auto = {"en": [{}], "fa": [{}], "fa-orig": [{}], "en-US-orig": [{}]}
+    assert select_subtitle(manual, auto, "auto", "fa") == ("fa-orig", "automatic")
+    assert select_subtitle(manual, auto, "fa") == ("fa-orig", "automatic")
+
+
+def test_explicit_language_override_ignores_original_language():
+    assert select_subtitle({"fa": [{}], "en": [{}]}, {"fa": [{}]}, "en", "fa") == ("en", "manual")
+
 def test_missing_explicit_language_does_not_fallback():
     with pytest.raises(SubtitleUnavailableError):
         select_subtitle({"it": [{}]}, {"fa": [{}]}, "en")

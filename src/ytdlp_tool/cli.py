@@ -21,11 +21,12 @@ from .media import (
 )
 from .subtitles import SubtitleUnavailableError
 from .transcribe import TranscriptionError, transcribe_media
+from .transcript import get_preferred_transcript
 
 
 COMMANDS = {
     "subs", "info", "formats", "video", "audio",
-    "thumbnail", "playlist", "clip", "comments", "transcribe",
+    "thumbnail", "playlist", "clip", "comments", "transcribe", "transcript",
 }
 
 
@@ -92,6 +93,14 @@ def build_command_parser() -> argparse.ArgumentParser:
     audio.add_argument("--codec", default="mp3")
     audio.add_argument("--quality", default="192")
     _add_output_dir(audio)
+
+    transcript = sub.add_parser("transcript", help="Prefer YouTube transcript, ASR only if absent")
+    transcript.add_argument("url")
+    transcript.add_argument("--lang", default="auto")
+    transcript.add_argument("--model", default="small", help="ASR fallback model")
+    transcript.add_argument("--model-dir", type=Path, default=None)
+    transcript.add_argument("--cpu-threads", type=int, default=8)
+    _add_output_dir(transcript)
 
     transcribe = sub.add_parser("transcribe", help="Download audio and transcribe speech to TXT/SRT")
     transcribe.add_argument("source", help="HTTP(S) video URL or existing local media file")
@@ -166,6 +175,17 @@ def _run_command(argv: list[str]) -> int:
         )
         print(f"Saved: {result.path}")
         print(f"Language: {result.language} ({result.source})")
+        return 0
+
+    if args.command == "transcript":
+        result = get_preferred_transcript(
+            args.url, args.output_dir, args.lang, args.model,
+            model_dir=args.model_dir, cpu_threads=args.cpu_threads,
+        )
+        for path in result.paths:
+            print(f"Saved: {path}")
+        print(f"Source: {result.source}")
+        print(f"Language: {result.language}")
         return 0
 
     if args.command == "info":

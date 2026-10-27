@@ -9,7 +9,7 @@ This plugin is a thin invocation layer over the user's version-controlled toolki
 
 ## Execution contract
 
-- Use **Remote Desktop Commander** and select the device named **Ops** when more than one device is available.
+- Prefer **Remote Desktop Commander** and select **Ops** when more than one device is available. If the service is quota-blocked or unavailable, use the authorized **Project IR** remote executor on device `ops` instead; do not retry or reconnect a quota-blocked service.
 - Work from `C:\GitHub\yt-dlp`.
 - Invoke the toolkit with `python -m ytdlp_tool ...`.
 - Do not substitute raw `yt-dlp` shell commands when the toolkit already exposes the requested operation.
@@ -22,10 +22,10 @@ This plugin is a thin invocation layer over the user's version-controlled toolki
 When the user invokes YTDL with only a YouTube URL and no operation, interpret it as:
 
 ```powershell
-python -m ytdlp_tool subs "URL" --lang auto --format txt --output-dir output\chatgpt\subs
+& .\output\chatgpt\asr-venv\Scripts\python.exe -m ytdlp_tool transcript "URL" --lang auto --model large-v3 --model-dir output\chatgpt\asr-models --output-dir output\chatgpt\transcripts
 ```
 
-For an Instagram Reel URL alone, default to `transcribe URL --video` so TXT/SRT and the video are produced together. Other YouTube-only URL behavior is unchanged.
+For a YouTube URL alone, prefer YouTube's published manual or automatic transcript in the video's spoken language, including `-orig` tracks. Only if no usable caption track exists, invoke Whisper ASR. Never treat YouTube access errors, timeouts, or caption-download failures as proof of absent captions; report them instead. Report transcript provenance (`youtube_manual`, `youtube_automatic`, or `asr`). For an Instagram Reel URL alone, default to `transcribe URL --video` so TXT/SRT and the video are produced together.
 
 After completion, read the generated TXT file and return its contents or summarize it according to the user's request.
 
@@ -33,6 +33,10 @@ After completion, read the generated TXT file and return its contents or summari
 
 Map natural-language requests to these commands:
 
+- transcript / text of YouTube video / متن گفتار یوتیوب:
+  `transcript URL --lang auto --model large-v3 --model-dir output\chatgpt\asr-models --output-dir output\chatgpt\transcripts`
+  - This is the DEFAULT for a bare YouTube URL; caption-first with local ASR only when no captions exist
+  - Do not download video/audio when a public caption track succeeds
 - subtitles / subs / captions / زیرنویس:
   `subs URL --lang LANG --format FORMAT`
   - default language: `auto`
@@ -84,7 +88,7 @@ If the exact requested tag is unavailable, report the available languages rather
 ## Returning results
 
 - `info`, `formats`, and `comments`: capture the command output and answer from it.
-- TXT subtitles: read the generated TXT file on Ops and use that content directly.
+- TXT subtitles/transcripts: read the generated TXT file on Ops and use that content directly. Include the reported source and language.
 - SRT/VTT subtitles: read and return the requested text when practical; also report the remote saved path.
 - Video, audio, thumbnail, playlist downloads, and clips: report the exact saved path(s) on Ops and relevant operation details.
 - For transcription report TXT/SRT/audio paths and optional video, language and model; read the text when requested. Mention speech recognition mistakes.
@@ -100,7 +104,7 @@ If the exact requested tag is unavailable, report the available languages rather
 
 ## Examples
 
-- `@YTDL https://youtu.be/...` -> automatic subtitle as TXT
+- `@YTDL https://youtu.be/...` -> YouTube transcript first (manual or automatic, TXT); ASR only if absent
 - `@YTDL subs https://youtu.be/... fa srt` -> Persian SRT
 - `@YTDL formats https://youtu.be/...` -> available formats
 - `@YTDL audio https://youtu.be/...` -> MP3 at default quality

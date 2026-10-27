@@ -24,6 +24,7 @@ class SubtitleCatalog:
     title: str
     manual: tuple[str, ...]
     automatic: tuple[str, ...]
+    original_language: str | None = None
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,7 @@ def inspect_video(url: str) -> SubtitleCatalog:
         title=str(info.get("title") or info.get("id") or "video"),
         manual=tuple(sorted((info.get("subtitles") or {}).keys())),
         automatic=tuple(sorted((info.get("automatic_captions") or {}).keys())),
+        original_language=str(info["language"]) if info.get("language") else None,
     )
 
 
@@ -101,7 +103,7 @@ def download_subtitle(
     selected_language, source = select_subtitle(
         {key: None for key in catalog.manual},
         {key: None for key in catalog.automatic},
-        language,
+        language, catalog.original_language,
     )
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)

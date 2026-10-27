@@ -93,6 +93,26 @@ def test_subs_subcommand_reuses_subtitle_workflow(monkeypatch, tmp_path, capsys)
     assert "Language: en (manual)" in capsys.readouterr().out
 
 
+
+def test_transcript_command_reports_provenance(monkeypatch, tmp_path, capsys):
+    from ytdlp_tool.transcript import PreferredTranscript
+
+    calls = []
+    def fake(url, output_dir, language, model, **kwargs):
+        calls.append((url, output_dir, language, model, kwargs["model_dir"]))
+        return PreferredTranscript((tmp_path / "caption.txt",), "youtube_automatic", "fa")
+
+    monkeypatch.setattr(cli, "get_preferred_transcript", fake)
+    assert cli.main([
+        "transcript", URL, "--lang", "auto", "--model", "large-v3",
+        "--output-dir", str(tmp_path),
+    ]) == 0
+    out = capsys.readouterr().out
+    assert "Source: youtube_automatic" in out
+    assert "Language: fa" in out
+    assert len(calls) == 1
+
+
 def test_subs_list_subcommand(monkeypatch, capsys):
     monkeypatch.setattr(
         cli, "inspect_video",

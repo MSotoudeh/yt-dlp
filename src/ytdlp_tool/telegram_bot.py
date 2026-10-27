@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
-MODES = {"audio", "video", "subs", "transcribe"}
+MODES = {"audio", "video", "subs", "transcribe", "transcript"}
 HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "vimeo.com", "www.vimeo.com"}
 
 def parse(text):
@@ -12,7 +12,12 @@ def parse(text):
     if parts and parts[0].split("@")[0] in ("/help", "/start"):
         return "help", ""
     if len(parts) == 1 and parts[0].startswith('https://'):
-        parts = ['/audio', parts[0]]
+        try:
+            host = urlsplit(parts[0]).hostname
+        except ValueError:
+            return None
+        mode = '/transcript' if host in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"} else '/audio'
+        parts = [mode, parts[0]]
     if len(parts) != 2:
         return None
     mode = parts[0].split("@")[0].lstrip("/").lower()
@@ -70,7 +75,7 @@ def ingest(db, item):
         import re
         candidate = re.search(r'https://(?:www\.)?(?:youtu\.be|youtube\.com|vimeo\.com)/[^\s<>]+', raw, re.I)
         if candidate:
-            parsed = parse('/audio ' + candidate.group(0))
+            parsed = parse(candidate.group(0))
     parsed = parsed or ("invalid", "")
     db.execute("INSERT OR IGNORE INTO jobs(update_id,chat,mode,url) VALUES (?,?,?,?)", (uid, chat, *parsed))
     db.commit()
@@ -108,27 +113,38 @@ def main():
                 uid, chat, mode, url = job
                 try:
                     if mode == "help":
-                        send(token, chat, "/video URL | /audio URL | /subs URL | /transcribe URL")
+                        send(token, chat, "YouTube URL = transcript first, speech recognition only if captions are absent. /transcript URL | /video URL | /audio URL | /subs URL | /transcribe URL")
                     elif mode == "invalid":
-                        send(token, chat, "Could not recognize a supported link. Send /audio https://youtu.be/VIDEO_ID")
+                        send(token, chat, "Could not recognize a supported link. Send https://youtu.be/VIDEO_ID")
                     else:
                         send(token, chat, "Job accepted: " + str(uid))
                         folder = root/"downloads"/str(uid)
                         folder.mkdir(parents=True, exist_ok=True)
                         cmd = [args.python, "-m", "ytdlp_tool", mode, url, "--output-dir", str(folder)]
-                        if mode == "transcribe": cmd += ["--model", "large-v3", "--model-dir", args.model_dir]
+                        if mode in ("transcribe", "transcript"):
+                            cmd += ["--model", "large-v3", "--model-dir", args.model_dir]
                         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, encoding="utf-8", errors="replace", env={**os.environ, "PYTHONIOENCODING": "utf-8"})
                         if proc.returncode: raise RuntimeError((proc.stderr or "processing failed")[-300:])
                         names = [p for p in folder.rglob("*") if p.is_file()]
-                        if mode == "transcribe": names = [p for p in names if p.suffix in (".srt",".txt")]
+                        if mode in ("transcribe", "transcript"):
+                            names = [p for p in names if p.suffix in (".srt", ".txt")]
                         if not names: raise RuntimeError("No output files produced")
                         for path in names[:4]:
                             upload(token, chat, path)
-                        send(token, chat, "Completed job " + str(uid))
+                        source = next((line[8:].strip() for line in proc.stdout.splitlines() if line.startswith("Source: ")), None)
+                        source_label = ("; source=" + source) if source else ""
+                        send(token, chat, "Completed job " + str(uid) + source_label)
                     db.execute("UPDATE jobs SET state='done' WHERE update_id=?", (uid,))
                 except Exception as exc:
                     db.execute("UPDATE jobs SET state='failed',error=? WHERE update_id=?", (str(exc)[:300],uid))
-                    try: send(token, chat, "Job failed. Contact operator.")
+                    notice = "Job failed. Contact operator."
+                    if mode == "transcript":
+                        detail = str(exc).lower()
+                        if "timed out" in detail or "timeout" in detail:
+                            notice = "YouTube transcript download timed out. Captions may exist; ASR was not run."
+                        elif "403" in detail or "429" in detail or "forbidden" in detail:
+                            notice = "YouTube captions were blocked or rate-limited. ASR was not run."
+                    try: send(token, chat, notice)
                     except Exception: pass
                 db.commit()
             if args.once: break

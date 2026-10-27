@@ -8,6 +8,7 @@ Version 0.3 adds optional local Whisper transcription for Instagram, YouTube and
 The CLI now exposes these high-value yt-dlp workflows:
 
 - `subs` — list or download manual/automatic subtitles as VTT, SRT, or TXT;
+- `transcript` — prefer YouTube's published Show transcript text, falling back to local ASR only if captions are missing;
 - `info` — normalized metadata as JSON;
 - `formats` — available format IDs, containers, resolution/codecs, and size;
 - `video` — download media with a yt-dlp format selector;
@@ -48,6 +49,7 @@ python -m pytest -v
 
 ```text
 ytdlp-tool subs URL [options]
+ytdlp-tool transcript YOUTUBE_URL [--lang auto] [--model small]
 ytdlp-tool info URL
 ytdlp-tool formats URL
 ytdlp-tool video URL [options]
@@ -75,8 +77,17 @@ Download English subtitles as plain text:
 ytdlp-tool subs "URL" --lang en --format txt
 ```
 
-Automatic language selection prefers manual English, then another manual language, then automatic English, then another automatic language.
-An explicitly requested language is never silently replaced.
+Automatic language selection prefers manual captions in the video's declared original language, then original-language automatic captions (such as `fa-orig`). If the original language is unknown or unavailable, it prefers a manual track and finally an automatic track. An explicitly requested language is never silently replaced.
+
+## Transcript-first YouTube text
+
+The `transcript` command prefers the caption track behind YouTube's **Show transcript** panel. It does not download video/audio or run ASR if a published caption works. If captions are absent or empty, it uses `faster-whisper` and returns TXT/SRT. The output reports `Source: youtube_manual`, `youtube_automatic`, or `asr` plus the language. Authentication failures or download timeouts are not treated as missing captions.
+
+```powershell
+& .\output\chatgpt\asr-venv\Scripts\python.exe -m ytdlp_tool transcript "https://youtu.be/VIDEO_ID" --model large-v3 --model-dir output\chatgpt\asr-models
+```
+
+The independent Telegram bot uses this for a bare YouTube URL; `/audio`, `/subs` and `/transcribe` remain explicit overrides.
 
 ## Metadata and formats
 

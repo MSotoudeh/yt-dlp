@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ytdl",
-  "version": "0.2.0",
-  "description": "Invoke the user's yt-dlp automation toolkit on the Ops machine through Remote Desktop Commander.",
+  "version": "0.2.1",
+  "description": "Invoke the user's yt-dlp toolkit on Ops for published transcripts, ASR fallback and media tasks.",
   "author": {
     "name": "M. Sotoudeh"
   },
@@ -11,12 +11,14 @@
       "interface": {
         "displayName": "YTDL",
         "shortDescription": "Use yt-dlp on Ops",
-        "longDescription": "Run the version-controlled yt-dlp automation toolkit on the Ops machine for subtitles, transcription, metadata, video, audio, thumbnails, playlists, clips, and comments.",
+        "longDescription": "Run the version-controlled yt-dlp toolkit on Ops. YouTube video URLs prefer published transcripts before local ASR, with media, metadata, captions and more available.",
         "developerName": "M. Sotoudeh",
         "category": "Productivity",
-        "capabilities": ["Interactive"],
+        "capabilities": [
+          "Interactive"
+        ],
         "defaultPrompt": [
-          "Get subtitles for this YouTube URL.",
+          "Extract the available YouTube transcript, using local speech recognition only if missing.",
           "Show the available formats for this URL.",
           "Extract audio from this URL.",
           "Transcribe speech in this Instagram Reel to TXT and SRT."

@@ -43,15 +43,38 @@ def _matching_key(mapping: dict, requested: str) -> str | None:
     return None
 
 
-def select_subtitle(manual: dict, automatic: dict, requested: str) -> tuple[str, str]:
+def _original_caption_key(mapping: dict, language: str) -> str | None:
+    """Pick YouTube's original-language ASR track over auto translations."""
+    return next((key for key in sorted(mapping)
+                 if key.endswith("-orig") and
+                 (key == language + "-orig" or key.startswith(language + "-"))), None)
+
+
+def select_subtitle(
+    manual: dict, automatic: dict, requested: str,
+    original_language: str | None = None,
+) -> tuple[str, str]:
     if requested != "auto":
         manual_key = _matching_key(manual, requested)
         if manual_key:
             return manual_key, "manual"
-        automatic_key = _matching_key(automatic, requested)
+        automatic_key = (_original_caption_key(automatic, requested)
+                         or _matching_key(automatic, requested))
         if automatic_key:
             return automatic_key, "automatic"
         raise SubtitleUnavailableError(f"Subtitle language '{requested}' is unavailable")
+
+    # Prefer captions in the video's declared spoken language over a
+    # translation in an unrelated language.
+    if original_language:
+        original = original_language.split("-")[0].split(".")[0]
+        key = _matching_key(manual, original)
+        if key:
+            return key, "manual"
+        key = (_original_caption_key(automatic, original)
+               or _matching_key(automatic, original))
+        if key:
+            return key, "automatic"
 
     manual_en = _english_key(manual)
     if manual_en:
