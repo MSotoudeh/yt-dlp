@@ -4,8 +4,9 @@ from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
-MODES = {"audio", "video", "subs", "transcribe", "transcript"}
-HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "vimeo.com", "www.vimeo.com"}
+MODES = {"audio", "video", "subs", "transcribe", "transcript", "choose", "txt", "srt"}
+YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
+HOSTS = YOUTUBE_HOSTS | {"vimeo.com", "www.vimeo.com"}
 
 def parse(text):
     parts = text.strip().split(maxsplit=1)
@@ -16,7 +17,7 @@ def parse(text):
             host = urlsplit(parts[0]).hostname
         except ValueError:
             return None
-        mode = '/transcript' if host in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"} else '/audio'
+        mode = '/choose' if host in YOUTUBE_HOSTS else '/audio'
         parts = [mode, parts[0]]
     if len(parts) != 2:
         return None
@@ -24,6 +25,8 @@ def parse(text):
     try:
         u = urlsplit(parts[1])
         if mode in MODES and u.scheme == "https" and u.hostname in HOSTS and u.port in (None, 443) and not u.username and not u.password:
+            if mode in {"choose", "txt", "srt", "transcript", "subs"} and u.hostname not in YOUTUBE_HOSTS:
+                return None
             return mode, parts[1]
     except ValueError:
         pass
@@ -38,8 +41,18 @@ def api(token, method, params):
         raise RuntimeError("Telegram API failed")
     return data["result"]
 
-def send(token, chat, text):
-    return api(token, "sendMessage", {"chat_id":chat, "text":text[:4000]})
+def send(token, chat, text, *, keyboard=None):
+    params = {"chat_id": chat, "text": text[:4000]}
+    if keyboard is not None:
+        params["reply_markup"] = json.dumps(keyboard)
+    return api(token, "sendMessage", params)
+
+
+def format_keyboard(request_id):
+    return {"inline_keyboard": [[
+        {"text": "TXT - Plain text", "callback_data": f"fmt:txt:{request_id}"},
+        {"text": "SRT - Timed subtitles", "callback_data": f"fmt:srt:{request_id}"},
+    ]]}
 
 def upload(token, chat, path):
     if path.stat().st_size > 49 * 1024 * 1024:
@@ -62,9 +75,55 @@ def upload(token, chat, path):
 
 def setup(db):
     db.execute("CREATE TABLE IF NOT EXISTS jobs (update_id INTEGER PRIMARY KEY, chat INTEGER NOT NULL, mode TEXT NOT NULL, url TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', error TEXT)")
+    db.execute("CREATE TABLE IF NOT EXISTS format_choices (request_id INTEGER PRIMARY KEY, chat INTEGER NOT NULL, requester INTEGER NOT NULL, url TEXT NOT NULL, selected TEXT)")
     db.commit()
 
+def ingest_callback(db, item):
+    """Queue exactly one format selection for the original requesting user."""
+    import re
+    callback = item.get("callback_query") or {}
+    uid = item["update_id"]
+    chat = (callback.get("message") or {}).get("chat") or {}
+    chat_id = chat.get("id")
+    sender = (callback.get("from") or {}).get("id")
+    match = re.fullmatch(r"fmt:(txt|srt):([0-9]+)", callback.get("data") or "")
+    message = "Invalid or expired format selection."
+    selected = None
+    if match and chat_id is not None and sender is not None:
+        fmt, original_id = match.group(1), int(match.group(2))
+        choice = db.execute(
+            "SELECT chat,requester,url,selected FROM format_choices WHERE request_id=?",
+            (original_id,),
+        ).fetchone()
+        if choice and choice[0] == chat_id and choice[1] == sender:
+            if choice[3]:
+                message = "A format has already been selected for this link."
+            else:
+                change = db.execute(
+                    "UPDATE format_choices SET selected=? WHERE request_id=? AND selected IS NULL",
+                    (fmt, original_id),
+                )
+                if change.rowcount == 1:
+                    db.execute(
+                        "INSERT OR IGNORE INTO jobs(update_id,chat,mode,url) VALUES (?,?,?,?)",
+                        (uid, chat_id, fmt, choice[2]),
+                    )
+                    selected = fmt
+                    message = "Format " + fmt.upper() + " selected."
+                else:
+                    message = "A format has already been selected for this link."
+    if not selected:
+        db.execute(
+            "INSERT OR IGNORE INTO jobs(update_id,chat,mode,url,state) VALUES (?,?,?,?,?)",
+            (uid, chat_id or 0, "ignored", "", "done"),
+        )
+    db.commit()
+    return message
+
+
 def ingest(db, item):
+    if item.get("callback_query"):
+        return ingest_callback(db, item)
     uid = item["update_id"]
     msg = item.get("message") or {}
     chat = (msg.get("chat") or {}).get("id")
@@ -78,6 +137,15 @@ def ingest(db, item):
             parsed = parse(candidate.group(0))
     parsed = parsed or ("invalid", "")
     db.execute("INSERT OR IGNORE INTO jobs(update_id,chat,mode,url) VALUES (?,?,?,?)", (uid, chat, *parsed))
+    if parsed[0] == "choose":
+        requester = (msg.get("from") or {}).get("id")
+        if requester is None and (msg.get("chat") or {}).get("type") == "private":
+            requester = chat
+        if requester is not None:
+            db.execute(
+                "INSERT OR IGNORE INTO format_choices(request_id,chat,requester,url) VALUES (?,?,?,?)",
+                (uid, chat, requester, parsed[1]),
+            )
     db.commit()
 
 def main():
@@ -99,11 +167,20 @@ def main():
             job = db.execute("SELECT update_id,chat,mode,url FROM jobs WHERE state='pending' ORDER BY update_id LIMIT 1").fetchone()
             if not job:
                 offset = db.execute("SELECT COALESCE(MAX(update_id),0)+1 FROM jobs").fetchone()[0]
-                updates = api(token, "getUpdates", {"offset": offset, "timeout": 20, "allowed_updates": '["message"]'})
+                updates = api(token, "getUpdates", {"offset": offset, "timeout": 20, "allowed_updates": '["message","callback_query"]'})
                 for update in updates:
-                    chat_id = str(((update.get("message") or {}).get("chat") or {}).get("id", ""))
+                    payload = update.get("message") or (update.get("callback_query") or {}).get("message") or {}
+                    chat_id = str((payload.get("chat") or {}).get("id", ""))
                     if chat_id in allowed or "*" in allowed:
-                        ingest(db, update)
+                        response = ingest(db, update)
+                        if update.get("callback_query"):
+                            try:
+                                api(token, "answerCallbackQuery", {
+                                    "callback_query_id": update["callback_query"]["id"],
+                                    "text": response or "Format selected.",
+                                })
+                            except Exception:
+                                pass
                     else:
                         # Record rejected IDs so polling offset advances without allowing work.
                         db.execute("INSERT OR IGNORE INTO jobs(update_id,chat,mode,url,state) VALUES (?,?,?,?,?)",
@@ -113,21 +190,35 @@ def main():
                 uid, chat, mode, url = job
                 try:
                     if mode == "help":
-                        send(token, chat, "YouTube URL = transcript first, speech recognition only if captions are absent. /transcript URL | /video URL | /audio URL | /subs URL | /transcribe URL")
+                        send(token, chat, "Send a YouTube link, then tap TXT (plain text) or SRT (timed subtitles). Direct commands: /txt URL | /srt URL | /transcript URL | /video URL | /audio URL | /subs URL | /transcribe URL")
                     elif mode == "invalid":
                         send(token, chat, "Could not recognize a supported link. Send https://youtu.be/VIDEO_ID")
+                    elif mode == "choose":
+                        choice = db.execute(
+                            "SELECT requester FROM format_choices WHERE request_id=? AND chat=?",
+                            (uid, chat),
+                        ).fetchone()
+                        if not choice:
+                            raise RuntimeError("Format selection requires an identified sender")
+                        send(token, chat, "Choose original-language transcript format:",
+                             keyboard=format_keyboard(uid))
                     else:
                         send(token, chat, "Job accepted: " + str(uid))
                         folder = root/"downloads"/str(uid)
                         folder.mkdir(parents=True, exist_ok=True)
-                        cmd = [args.python, "-m", "ytdlp_tool", mode, url, "--output-dir", str(folder)]
-                        if mode in ("transcribe", "transcript"):
+                        command_mode = "transcript" if mode in ("txt", "srt") else mode
+                        cmd = [args.python, "-m", "ytdlp_tool", command_mode, url, "--output-dir", str(folder)]
+                        if command_mode in ("transcribe", "transcript"):
                             cmd += ["--model", "large-v3", "--model-dir", args.model_dir]
+                        if mode in ("txt", "srt"):
+                            cmd += ["--format", mode]
                         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, encoding="utf-8", errors="replace", env={**os.environ, "PYTHONIOENCODING": "utf-8"})
                         if proc.returncode: raise RuntimeError((proc.stderr or "processing failed")[-300:])
                         names = [p for p in folder.rglob("*") if p.is_file()]
-                        if mode in ("transcribe", "transcript"):
+                        if command_mode in ("transcribe", "transcript"):
                             names = [p for p in names if p.suffix in (".srt", ".txt")]
+                        if mode in ("txt", "srt"):
+                            names = [p for p in names if p.suffix == "." + mode]
                         if not names: raise RuntimeError("No output files produced")
                         for path in names[:4]:
                             upload(token, chat, path)

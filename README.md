@@ -49,7 +49,7 @@ python -m pytest -v
 
 ```text
 ytdlp-tool subs URL [options]
-ytdlp-tool transcript YOUTUBE_URL [--lang auto] [--model small]
+ytdlp-tool transcript YOUTUBE_URL [--lang auto] [--format txt|srt] [--model small]
 ytdlp-tool info URL
 ytdlp-tool formats URL
 ytdlp-tool video URL [options]
@@ -87,7 +87,7 @@ The `transcript` command prefers the caption track behind YouTube's **Show trans
 & .\output\chatgpt\asr-venv\Scripts\python.exe -m ytdlp_tool transcript "https://youtu.be/VIDEO_ID" --model large-v3 --model-dir output\chatgpt\asr-models
 ```
 
-The independent Telegram bot uses this for a bare YouTube URL; `/audio`, `/subs` and `/transcribe` remain explicit overrides.
+The independent Telegram bot displays inline **TXT (plain text)** and **SRT (timed subtitles)** buttons for a bare YouTube URL; `/txt URL` and `/srt URL` select a format directly. The CLI supports `transcript URL --format txt|srt` while preserving the existing no-`--format` behavior. Native YouTube SRT cues use their published timestamps and do not require ASR. `/audio`, `/subs` and `/transcribe` remain explicit overrides.
 
 ## Metadata and formats
 

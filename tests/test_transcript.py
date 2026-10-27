@@ -150,3 +150,42 @@ def test_original_english_preferred_over_persian_youtube_translation(monkeypatch
     assert result.language == "en"
     assert captured[-1]["subtitleslangs"] == ["en"]
     assert result.paths[0].read_text(encoding="utf-8").strip() == "Hello world"
+
+
+def test_srt_format_is_taken_from_youtube_not_asr(monkeypatch, tmp_path):
+    file = tmp_path / "subtitle.srt"
+    file.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello there.\n", encoding="utf-8")
+    calls = []
+
+    def native(url, language, fmt, destination):
+        calls.append(fmt)
+        return DownloadResult(file, "en", "manual", fmt, "Demo", "abc123")
+
+    monkeypatch.setattr(transcript, "download_subtitle", native)
+    monkeypatch.setattr(transcript, "transcribe_media",
+                        lambda *a, **kw: pytest.fail("native SRT must bypass ASR"))
+    result = transcript.get_preferred_transcript(URL, tmp_path, output_format="srt")
+    assert calls == ["srt"]
+    assert result.paths == (file,)
+    assert result.source == "youtube_manual"
+
+
+def test_asr_fallback_returns_only_selected_format(monkeypatch, tmp_path):
+    def no_captions(*args):
+        raise SubtitleUnavailableError("Native-language track absent")
+    monkeypatch.setattr(transcript, "download_subtitle", no_captions)
+    monkeypatch.setattr(
+        transcript, "transcribe_media",
+        lambda *a, **kw: TranscriptResult(tmp_path / "speech.txt", tmp_path / "speech.srt",
+                                            tmp_path / "audio.mp3", None, "de", 5),
+    )
+    result = transcript.get_preferred_transcript(URL, tmp_path, output_format="srt")
+    assert result.paths == (tmp_path / "speech.srt",)
+    assert result.language == "de"
+
+
+def test_invalid_transcript_format_rejected_before_network(monkeypatch, tmp_path):
+    monkeypatch.setattr(transcript, "download_subtitle",
+                        lambda *a: pytest.fail("unexpected network request"))
+    with pytest.raises(ValueError, match="format"):
+        transcript.get_preferred_transcript(URL, tmp_path, output_format="json")

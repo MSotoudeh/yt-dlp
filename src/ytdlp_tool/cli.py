@@ -97,6 +97,7 @@ def build_command_parser() -> argparse.ArgumentParser:
     transcript = sub.add_parser("transcript", help="Prefer YouTube transcript, ASR only if absent")
     transcript.add_argument("url")
     transcript.add_argument("--lang", default="auto")
+    transcript.add_argument("--format", choices=("txt", "srt"), default=None, dest="output_format")
     transcript.add_argument("--model", default="small", help="ASR fallback model")
     transcript.add_argument("--model-dir", type=Path, default=None)
     transcript.add_argument("--cpu-threads", type=int, default=8)
@@ -181,6 +182,7 @@ def _run_command(argv: list[str]) -> int:
         result = get_preferred_transcript(
             args.url, args.output_dir, args.lang, args.model,
             model_dir=args.model_dir, cpu_threads=args.cpu_threads,
+            output_format=args.output_format,
         )
         for path in result.paths:
             print(f"Saved: {path}")

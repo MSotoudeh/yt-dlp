@@ -24,6 +24,7 @@ def get_preferred_transcript(
     *,
     model_dir: str | Path | None = None,
     cpu_threads: int = 8,
+    output_format: str | None = None,
 ) -> PreferredTranscript:
     """Use a published YouTube caption track before downloading or decoding audio.
 
@@ -31,9 +32,11 @@ def get_preferred_transcript(
     rate limits and broken downloads remain visible, not silently reclassified.
     """
     validate_youtube_url(url)
+    if output_format is not None and output_format not in {"txt", "srt"}:
+        raise ValueError("Output format must be txt or srt")
     root = Path(output_dir)
     try:
-        caption = download_subtitle(url, language, "txt", root / "captions")
+        caption = download_subtitle(url, language, output_format or "txt", root / "captions")
         if not caption.path.read_text(encoding="utf-8").strip():
             caption.path.unlink(missing_ok=True)
             raise SubtitleUnavailableError("YouTube returned an empty transcript")
@@ -48,7 +51,8 @@ def get_preferred_transcript(
             model_dir=model_dir, cpu_threads=cpu_threads,
         )
         return PreferredTranscript(
-            paths=(recognized.txt_path, recognized.srt_path),
+            paths=((recognized.txt_path, recognized.srt_path) if output_format is None
+                   else (recognized.txt_path if output_format == "txt" else recognized.srt_path,)),
             source="asr",
             language=recognized.language,
         )
