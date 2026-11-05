@@ -304,6 +304,7 @@ def main():
             else:
                 uid, chat, mode, url = job
                 try:
+                    job_failure = None
                     if mode == "help":
                         send(token, chat, "Paste a public Instagram post/Reel URL to receive its written caption automatically (no audio/video processing). For speech use /igtxt URL or /igsrt URL; optional menu: /ig_choose URL. YouTube: TXT or SRT choice. Instagram Stories often have overlay text requiring OCR and login.")
                     elif mode == "invalid":
@@ -342,18 +343,25 @@ def main():
                              {".jpg", ".jpeg", ".png", ".mp4", ".mov", ".webm"}),
                             key=lambda p: str(p),
                         )
+                        media_error = None
                         try:
                             if media_proc.returncode:
                                 detail = (media_proc.stderr or "media not accessible")[-220:]
                                 raise RuntimeError(detail)
                             send_instagram_media(token, chat, media_paths)
                         except Exception as media_exc:
-                            send(token, chat, "Instagram media unavailable: " + str(media_exc)[-230:])
+                            media_error = str(media_exc)[-230:]
+                            send(token, chat, "Instagram media unavailable: " + media_error)
                         if written:
                             send_caption_text(token, chat, written)
                         else:
                             detail = (caption_proc.stderr or "no written caption available")[-220:]
                             send(token, chat, "Instagram written caption unavailable: " + detail)
+                            if media_error is not None:
+                                job_failure = (
+                                    "Instagram media and written caption unavailable: " +
+                                    media_error + "; caption: " + detail
+                                )[:300]
                     elif mode in {"choose", "ig_choose"}:
                         choice = db.execute(
                             "SELECT requester FROM format_choices WHERE request_id=? AND chat=?",
@@ -405,7 +413,10 @@ def main():
                         source_label = ("; source=" + source) if source else ""
                         if mode != "ig_caption":
                             send(token, chat, "Completed job " + str(uid) + source_label)
-                    db.execute("UPDATE jobs SET state='done' WHERE update_id=?", (uid,))
+                    db.execute(
+                        "UPDATE jobs SET state=?,error=? WHERE update_id=?",
+                        ("failed" if job_failure else "done", job_failure, uid),
+                    )
                 except Exception as exc:
                     db.execute("UPDATE jobs SET state='failed',error=? WHERE update_id=?", (str(exc)[:300],uid))
                     notice = "Job failed. Contact operator."

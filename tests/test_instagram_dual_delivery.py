@@ -206,3 +206,35 @@ def test_instagram_post_video_fallback_preserves_multiple_items(monkeypatch, tmp
     monkeypatch.setattr(ig, "download_video", video_download)
     result=ig.download_instagram_media(PHOTO_LINK, tmp_path)
     assert [p.name for p in result] == ["clip1.mp4","clip2.mp4"]
+
+
+def test_bot_marks_job_failed_when_both_instagram_caption_and_media_inaccessible(monkeypatch, tmp_path):
+    import sqlite3
+    import sys
+    import ytdlp_tool.telegram_bot as bot
+
+    with sqlite3.connect(tmp_path / "jobs.sqlite") as db:
+        bot.setup(db)
+        bot.ingest(db, {"update_id": 99, "message": {
+            "chat": {"id": 5, "type": "private"}, "from": {"id": 5},
+            "text": IG_LINK,
+        }})
+
+    replies = []
+    monkeypatch.setattr(bot.subprocess, "run", lambda cmd, **kw:
+                        subprocess.CompletedProcess(cmd, 1, stdout="", stderr="login required"))
+    monkeypatch.setattr(bot, "send", lambda t, c, message, **kw: replies.append(message))
+    monkeypatch.setattr(bot, "send_instagram_media", lambda *a: pytest.fail("No media"))
+    monkeypatch.setattr(bot, "send_caption_text", lambda *a: pytest.fail("No caption"))
+    monkeypatch.setenv("YTDL_TELEGRAM_BOT_TOKEN", "test")
+    monkeypatch.setenv("YTDL_ALLOWED_CHAT_IDS", "5")
+    monkeypatch.setattr(sys, "argv", [
+        "bot", "--once", "--root", str(tmp_path), "--model-dir", str(tmp_path),
+    ])
+
+    bot.main()
+    with sqlite3.connect(tmp_path / "jobs.sqlite") as db:
+        state, error = db.execute("SELECT state,error FROM jobs WHERE update_id=99").fetchone()
+    assert state == "failed"
+    assert error and "unavailable" in error.lower()
+    assert len(replies) >= 1
