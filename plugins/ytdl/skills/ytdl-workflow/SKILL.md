@@ -43,6 +43,12 @@ Map natural-language requests to these commands:
   - default format: `txt`
   - use `--list` when the user asks which subtitle languages exist
 - Instagram Story URLs (`/stories/USERNAME/STORY_ID/`) have no reliably accessible standalone authored caption; overlay text requires OCR of pixels and stories typically require login. The bot recognizes them and explains the limitation rather than running any media processing.
+- X/Twitter status media and original written text:
+  `x-post URL --output-dir output\\chatgpt\\x-posts`
+  - Bare URLs on x.com/twitter.com in Telegram automatically produce native photo/video/album, then a **separate** ordinary message with the original tweet text; no TXT attachment
+  - Text-only posts generate only a text message; quoted/parent post media is not substituted
+  - The public X syndication endpoint (no paid API or login) supplies status text and media metadata; downloads use whitelisted twimg.com hosts, with size validation and MP4 fallback
+  - Endpoint is undocumented, may be rate-limited or change, and cannot access protected/deleted statuses; do not use browser cookies
 - Instagram post/Reel media:
   `ig-media URL --output-dir output\\chatgpt\\instagram-media`
   - Downloads accessible photo/video. Reel: yt-dlp. Photo/carousel: Instaloader in isolated Python (anonymous, no saved login or browser cookies), then gallery-dl as fallback (ignoring user config).
@@ -123,6 +129,7 @@ For `--lang auto`, refuse a translation track unless it is confidently in the or
 - `@YTDL clip https://youtu.be/... 01:30 02:10` -> selected time range
 - `@YTDL comments https://youtu.be/... 20` -> up to 20 comments
 - `@YTDL transcribe https://www.instagram.com/reel/... --lang fa` -> audio + TXT/SRT
+- `@YTDL https://x.com/USERNAME/status/ID` -> X/Twitter original post text plus attached media; report errors for protected content
 - `@YTDL https://www.instagram.com/reel/...` -> fetch authored Caption TXT (metadata only), or ask whether speech TXT/SRT is intended if ambiguous
 - `@YTDL ig-caption https://www.instagram.com/reel/...` -> authored Caption TXT
 - `@YTDL ig-speech https://www.instagram.com/reel/... --format srt` -> original-language timed spoken transcript

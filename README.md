@@ -220,3 +220,13 @@ The plugin is intentionally a thin invocation layer: the implementation remains 
 The adapter is intentionally separated from the CLI so the same operations can later be exposed through an MCP/HTTP facade. Useful future additions include authenticated/cookie workflows, batch jobs, richer playlist policies, SponsorBlock/chapter actions, archive management, and machine-oriented task manifests.
 
 Browser cookies are not read automatically; authenticated workflows should require explicit authorization.
+
+## X / Twitter: original post media and separate text
+
+Paste a public `https://x.com/USERNAME/status/ID` or `https://twitter.com/USERNAME/status/ID` link into the private `@You_TubeDL_bot`. It sends the **original attached photo/video (or native Telegram album) first**, then the post's **written text as a separate Telegram message**. It does not send a TXT attachment, run speech ASR, or perform OCR. A text-only post produces only a text message. Quoted/parent posts' media are not silently substituted for the linked post's attachments.
+
+CLI: `python -m ytdlp_tool x-post URL --output-dir output/chatgpt/x-posts`. Internal text files are kept only on Ops to pass the bot's processing stage; they are not uploaded. Telegram aliases: `/tweet URL`, `/x URL`, `/xpost URL`.
+
+Single-post metadata comes from X's **public embedded-post syndication JSON**; attached photos and MP4s come only from the expected `pbs.twimg.com` / `video.twimg.com` CDN domains. It requires neither an X developer key nor account cookies or login. Syndication is an undocumented public endpoint, may change or rate-limit, and is not a guaranteed free X API. Private, deleted, protected or inaccessible posts produce an explicit error. Downloaded media is validated and size-bounded before upload. Large video variants may fall back to smaller MP4 variants; overly large/unsupported attachments are reported while retaining accessible post text.
+
+Validated on Ops 2026-11-05 with a public text-only post, photo and video post, both direct CLI and actual post retrieval through the bot job pipeline. Native Telegram photo/video sending remains subject to Telegram delivery checks.

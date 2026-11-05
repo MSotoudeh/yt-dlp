@@ -20,6 +20,7 @@ from .media import (
     list_formats,
 )
 from .instagram import extract_post_caption, extract_spoken_text, download_instagram_media
+from .x_twitter import download_post as download_x_post
 from .subtitles import SubtitleUnavailableError
 from .transcribe import TranscriptionError, transcribe_media
 from .transcript import get_preferred_transcript
@@ -28,7 +29,7 @@ from .transcript import get_preferred_transcript
 COMMANDS = {
     "subs", "info", "formats", "video", "audio",
     "thumbnail", "playlist", "clip", "comments", "transcribe", "transcript",
-    "ig-caption", "ig-speech", "ig-media",
+    "ig-caption", "ig-speech", "ig-media", "x-post",
 }
 
 
@@ -104,6 +105,10 @@ def build_command_parser() -> argparse.ArgumentParser:
     transcript.add_argument("--model-dir", type=Path, default=None)
     transcript.add_argument("--cpu-threads", type=int, default=8)
     _add_output_dir(transcript)
+
+    xpost = sub.add_parser("x-post", help="Get public X/Twitter status text and attached media")
+    xpost.add_argument("url")
+    _add_output_dir(xpost)
 
     ig_media = sub.add_parser("ig-media", help="Download accessible Instagram post or Reel media")
     ig_media.add_argument("url")
@@ -206,6 +211,15 @@ def _run_command(argv: list[str]) -> int:
             print(f"Saved: {path}")
         print(f"Source: {result.source}")
         print(f"Language: {result.language}")
+        return 0
+
+    if args.command == "x-post":
+        result = download_x_post(args.url, args.output_dir)
+        print(f"Text: {result.text_path}")
+        for path in result.media:
+            print(f"Media: {path}")
+        for warning in result.warnings:
+            print(f"Warning: {warning}")
         return 0
 
     if args.command == "ig-media":

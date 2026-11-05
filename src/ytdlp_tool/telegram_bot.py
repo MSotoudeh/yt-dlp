@@ -5,12 +5,15 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 MODES = {"audio", "video", "subs", "transcribe", "transcript", "choose", "txt", "srt",
-         "ig_choose", "ig_caption", "ig_txt", "ig_srt", "ig_story"}
+         "ig_choose", "ig_caption", "ig_txt", "ig_srt", "ig_story", "x_post"}
 ALIASES = {"igcaption": "ig_caption", "igtxt": "ig_txt",
-           "igsrt": "ig_srt", "caption": "ig_caption"}
+           "igsrt": "ig_srt", "caption": "ig_caption",
+           "tweet": "x_post", "x": "x_post", "xpost": "x_post"}
 YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
 INSTAGRAM_HOSTS = {"instagram.com", "www.instagram.com", "m.instagram.com"}
-HOSTS = YOUTUBE_HOSTS | INSTAGRAM_HOSTS | {"vimeo.com", "www.vimeo.com"}
+X_HOSTS = {"x.com", "www.x.com", "mobile.x.com", "twitter.com",
+           "www.twitter.com", "mobile.twitter.com"}
+HOSTS = YOUTUBE_HOSTS | INSTAGRAM_HOSTS | X_HOSTS | {"vimeo.com", "www.vimeo.com"}
 
 def parse(text):
     parts = text.strip().split(maxsplit=1)
@@ -21,7 +24,9 @@ def parse(text):
             host = urlsplit(parts[0]).hostname
         except ValueError:
             return None
-        mode = "/choose" if host in YOUTUBE_HOSTS else ("/ig_caption" if host in INSTAGRAM_HOSTS else "/audio")
+        mode = ("/choose" if host in YOUTUBE_HOSTS
+                else "/ig_caption" if host in INSTAGRAM_HOSTS
+                else "/x_post" if host in X_HOSTS else "/audio")
         parts = [mode, parts[0]]
     if len(parts) != 2:
         return None
@@ -32,6 +37,14 @@ def parse(text):
         if mode in MODES and u.scheme == "https" and u.hostname in HOSTS and u.port in (None, 443) and not u.username and not u.password:
             if mode in {"choose", "txt", "srt", "transcript", "subs"} and u.hostname not in YOUTUBE_HOSTS:
                 return None
+            if mode == "x_post":
+                if u.hostname not in X_HOSTS:
+                    return None
+                from .x_twitter import validate_status_url
+                try:
+                    validate_status_url(parts[1])
+                except ValueError:
+                    return None
             if u.hostname in INSTAGRAM_HOSTS:
                 import re
                 is_story = bool(re.fullmatch(
@@ -183,6 +196,11 @@ def send_instagram_media(token, chat, paths):
             raise RuntimeError(f"Telegram {method} failed")
 
 
+def send_native_media(token, chat, paths):
+    """Native Telegram photo/video or album; reuse the verified uploader."""
+    return send_instagram_media(token, chat, paths)
+
+
 def setup(db):
     db.execute("CREATE TABLE IF NOT EXISTS jobs (update_id INTEGER PRIMARY KEY, chat INTEGER NOT NULL, mode TEXT NOT NULL, url TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', error TEXT)")
     db.execute("CREATE TABLE IF NOT EXISTS format_choices (request_id INTEGER PRIMARY KEY, chat INTEGER NOT NULL, requester INTEGER NOT NULL, url TEXT NOT NULL, selected TEXT)")
@@ -247,7 +265,7 @@ def ingest(db, item):
     parsed = parse(raw)
     if parsed is None:
         import re
-        candidate = re.search(r'https://(?:www\.)?(?:youtu\.be|youtube\.com|vimeo\.com|instagram\.com)/[^\s<>]+', raw, re.I)
+        candidate = re.search(r'https://(?:(?:www|mobile)\.)?(?:youtu\.be|youtube\.com|vimeo\.com|instagram\.com|x\.com|twitter\.com)/[^\s<>]+', raw, re.I)
         if candidate:
             parsed = parse(candidate.group(0))
     parsed = parsed or ("invalid", "")
@@ -306,11 +324,47 @@ def main():
                 try:
                     job_failure = None
                     if mode == "help":
-                        send(token, chat, "Paste a public Instagram post/Reel URL to receive the original media and written caption in two separate messages (no ASR/OCR). For speech use /igtxt URL or /igsrt URL; optional menu: /ig_choose URL. YouTube: TXT or SRT choice. Instagram Stories often have overlay text requiring OCR and login.")
+                        send(token, chat, "Paste a public Instagram or X/Twitter post URL for native photo/video followed by authored text in a separate message (no TXT attachment). For speech use /igtxt URL or /igsrt URL; optional menu: /ig_choose URL. YouTube: TXT or SRT choice. Instagram Stories often have overlay text requiring OCR and login.")
                     elif mode == "invalid":
                         send(token, chat, "Unsupported link. Send an Instagram /reel/ or /p/ link, or a YouTube video link.")
                     elif mode == "ig_story":
                         send(token, chat, "Instagram Story: there is generally no separate written post caption to retrieve from public metadata. Text displayed on a Story is embedded in its image/video, requiring OCR; Stories commonly require login. No audio, video or OCR was processed.")
+                    elif mode == "x_post":
+                        folder = root/"downloads"/str(uid)
+                        folder.mkdir(parents=True, exist_ok=True)
+                        command = [args.python, "-m", "ytdlp_tool", "x-post", url,
+                                   "--output-dir", str(folder)]
+                        proc = subprocess.run(
+                            command, capture_output=True, text=True, timeout=180,
+                            encoding="utf-8", errors="replace",
+                            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+                        )
+                        if proc.returncode:
+                            raise RuntimeError("X post unavailable: " + (proc.stderr or "retrieval failed")[-250:])
+                        text_files = list(folder.glob("tweet-*.txt"))
+                        if len(text_files) != 1:
+                            raise RuntimeError("X post text result missing")
+                        media_paths = sorted(
+                            (p for p in folder.rglob("*") if p.is_file()
+                             and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".mp4"}),
+                            key=lambda p: str(p),
+                        )
+                        if media_paths:
+                            try:
+                                send_native_media(token, chat, media_paths)
+                            except Exception as exc:
+                                send(token, chat, "X media could not be delivered: " + str(exc)[-180:])
+                        warnings = [line[9:].strip() for line in proc.stdout.splitlines()
+                                    if line.startswith("Warning: ")]
+                        if warnings:
+                            send(token, chat, "Some X media unavailable: " + "; ".join(warnings)[-300:])
+                        written = text_files[0].read_text(encoding="utf-8").strip()
+                        if written:
+                            send_caption_text(token, chat, written)
+                        elif media_paths:
+                            send(token, chat, "This X post has no authored text.")
+                        else:
+                            raise RuntimeError("X post contains neither accessible text nor media")
                     elif mode == "ig_caption":
                         # A bare Instagram link produces two separate Telegram
                         # deliveries: native media and ordinary caption text.

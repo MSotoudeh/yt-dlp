@@ -32,3 +32,11 @@ Never commit token or reveal it in logs. The existing bot token remains in the p
 - **Do not confuse the authored Instagram caption with video speech**. Native Instagram auto-captions/hardcoded video text are not independently accessible through yt-dlp; spoken text uses ASR. OCR of text burned into the image is **not implemented** (a separate, explicitly chosen workflow would be needed).
 - Only public accessible content is supported without user-granted authentication. No cookies are inspected or extracted. A missing/blocked caption produces an explicit error, never fabricated text.
 - Optional Telegram inline callbacks are bound to the requesting chat/user, and repeat clicks are deduplicated. Automatic Caption retrieval never starts ASR.
+
+## X / Twitter: same dual-delivery workflow
+
+- A bare public `https://x.com/HANDLE/status/TWEET_ID` or `https://twitter.com/HANDLE/status/TWEET_ID` triggers **native Telegram photo/video/media group first, then the tweet's authored text as a separate normal Telegram message**, no TXT attachment. Direct commands `/tweet URL`, `/x URL`, `/xpost URL` work identically.
+- Purely text posts send only the actual text; no fabricated media or transcript. Attached media only (not silently downloaded from quoted or parent posts). Links and Unicode tweet text are preserved. Very long messages are split safely.
+- The `x-post` CLI workflow fetches the read-only public embedded-post syndication data (`cdn.syndication.twimg.com/tweet-result`), then streams media from whitelisted `pbs.twimg.com` / `video.twimg.com` hosts. It validates HTTPS, status IDs, no redirects, payload type and Telegram upload-size limits; large MP4 variants try a smaller bitrate version when available. Metadata is fetched once per job. Partial failures report missing media while still delivering available original text.
+- No paid X API, login, cookies, browser session, OCR, ASR, or third-party tweet proxy is used. The syndication endpoint is **undocumented and may become unavailable**; do not promise unlimited public access. Private, deleted, age-restricted or protected statuses cannot be reliably retrieved.
+- Verified 2026-11-05 using real public text, photo and video statuses and mocked Telegram transport. Delivery to Telegram's real API is a separate test.
