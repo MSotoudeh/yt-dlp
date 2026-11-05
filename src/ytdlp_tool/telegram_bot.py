@@ -306,7 +306,7 @@ def main():
                 try:
                     job_failure = None
                     if mode == "help":
-                        send(token, chat, "Paste a public Instagram post/Reel URL to receive its written caption automatically (no audio/video processing). For speech use /igtxt URL or /igsrt URL; optional menu: /ig_choose URL. YouTube: TXT or SRT choice. Instagram Stories often have overlay text requiring OCR and login.")
+                        send(token, chat, "Paste a public Instagram post/Reel URL to receive the original media and written caption in two separate messages (no ASR/OCR). For speech use /igtxt URL or /igsrt URL; optional menu: /ig_choose URL. YouTube: TXT or SRT choice. Instagram Stories often have overlay text requiring OCR and login.")
                     elif mode == "invalid":
                         send(token, chat, "Unsupported link. Send an Instagram /reel/ or /p/ link, or a YouTube video link.")
                     elif mode == "ig_story":

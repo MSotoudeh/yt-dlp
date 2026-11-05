@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ytdl",
-  "version": "0.2.5",
-  "description": "Use YTDL on Ops for YouTube transcripts and Instagram photo/video plus separately delivered captions, with optional speech TXT/SRT.",
+  "version": "0.2.6",
+  "description": "Use YTDL on Ops for YouTube transcripts and public Instagram photo/carousel/Reel media plus separate captions.",
   "author": {
     "name": "M. Sotoudeh"
   },
@@ -11,7 +11,7 @@
       "interface": {
         "displayName": "YTDL",
         "shortDescription": "Use yt-dlp on Ops",
-        "longDescription": "Get original-language YouTube captions, Instagram post descriptions, and Instagram spoken TXT/SRT using the Ops toolkit. No automatic translation.",
+        "longDescription": "Extract original-language YouTube captions. For public Instagram posts, retrieve original photos, full carousels or Reels and deliver authored text separately using the Ops toolkit. No automatic translation.",
         "developerName": "M. Sotoudeh",
         "category": "Productivity",
         "capabilities": [
