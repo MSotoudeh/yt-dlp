@@ -112,6 +112,77 @@ def upload(token, chat, path):
         raise RuntimeError("Telegram sendDocument failed")
 
 
+def send_instagram_media(token, chat, paths):
+    """Send original media as native Telegram photo/video or album, never as document."""
+    import uuid
+
+    paths = tuple(Path(p) for p in paths)
+    if not paths:
+        raise ValueError("No Instagram media to send")
+
+    types = {".jpg": "photo", ".jpeg": "photo", ".png": "photo",
+             ".mp4": "video"}
+    for start in range(0, len(paths), 10):
+        batch = paths[start:start + 10]
+        items = []
+        for n, path in enumerate(batch):
+            kind = types.get(path.suffix.lower())
+            if not kind:
+                raise ValueError(f"Unsupported Telegram photo/video format: {path.suffix}")
+            if not path.is_file():
+                raise FileNotFoundError(path)
+            limit = 10 * 1024 * 1024 if kind == "photo" else 49 * 1024 * 1024
+            if path.stat().st_size > limit:
+                raise ValueError(f"Instagram {kind} exceeds Telegram upload limit: {path.name}")
+            items.append((kind, path))
+        boundary = "ig_" + uuid.uuid4().hex
+        chunks = []
+
+        def field(name, value):
+            return (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                f"{value}\r\n"
+            ).encode("utf-8")
+
+        chunks.append(field("chat_id", chat))
+        if len(items) == 1:
+            kind, _ = items[0]
+            method = "sendPhoto" if kind == "photo" else "sendVideo"
+        else:
+            method = "sendMediaGroup"
+            media = [
+                {"type": kind, "media": f"attach://media{i}"}
+                for i, (kind, _) in enumerate(items)
+            ]
+            chunks.append(field("media", json.dumps(media, separators=(",", ":"))))
+        for i, (kind, path) in enumerate(items):
+            field_name = f"media{i}" if len(items) > 1 else kind
+            media_type = "image/jpeg" if path.suffix.lower() in (".jpg", ".jpeg") else (
+                "image/png" if kind == "photo" else "video/mp4"
+            )
+            # Avoid non-ASCII header filename encoding, which fails for Instagram
+            # captions/titles with Unicode punctuation on Windows.
+            filename = f"instagram-{i}{path.suffix.lower()}"
+            chunks.append(
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'
+                f"Content-Type: {media_type}\r\n\r\n".encode("ascii")
+            )
+            chunks.append(path.read_bytes())
+            chunks.append(b"\r\n")
+        chunks.append(f"--{boundary}--\r\n".encode("ascii"))
+        req = Request(
+            f"https://api.telegram.org/bot{token}/{method}",
+            data=b"".join(chunks),
+            headers={"Content-Type": "multipart/form-data; boundary=" + boundary},
+        )
+        with urlopen(req, timeout=180) as response:
+            data = json.load(response)
+        if not data.get("ok"):
+            raise RuntimeError(f"Telegram {method} failed")
+
+
 def setup(db):
     db.execute("CREATE TABLE IF NOT EXISTS jobs (update_id INTEGER PRIMARY KEY, chat INTEGER NOT NULL, mode TEXT NOT NULL, url TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', error TEXT)")
     db.execute("CREATE TABLE IF NOT EXISTS format_choices (request_id INTEGER PRIMARY KEY, chat INTEGER NOT NULL, requester INTEGER NOT NULL, url TEXT NOT NULL, selected TEXT)")
@@ -239,6 +310,50 @@ def main():
                         send(token, chat, "Unsupported link. Send an Instagram /reel/ or /p/ link, or a YouTube video link.")
                     elif mode == "ig_story":
                         send(token, chat, "Instagram Story: there is generally no separate written post caption to retrieve from public metadata. Text displayed on a Story is embedded in its image/video, requiring OCR; Stories commonly require login. No audio, video or OCR was processed.")
+                    elif mode == "ig_caption":
+                        # A bare Instagram link produces two separate Telegram
+                        # deliveries: native media and ordinary caption text.
+                        # Intermediate TXT remains Ops-local; never upload it.
+                        folder = root/"downloads"/str(uid)
+                        folder.mkdir(parents=True, exist_ok=True)
+                        base = [args.python, "-m", "ytdlp_tool"]
+                        run_args = {
+                            "capture_output": True, "text": True, "timeout": 180,
+                            "encoding": "utf-8", "errors": "replace",
+                            "env": {**os.environ, "PYTHONIOENCODING": "utf-8"},
+                        }
+                        caption_proc = subprocess.run(
+                            base + ["ig-caption", url, "--output-dir", str(folder)],
+                            **run_args,
+                        )
+                        caption_paths = list(folder.glob("instagram-*-caption.txt"))
+                        written = (
+                            caption_paths[0].read_text(encoding="utf-8").strip()
+                            if caption_proc.returncode == 0 and len(caption_paths) == 1
+                            else ""
+                        )
+                        media_proc = subprocess.run(
+                            base + ["ig-media", url, "--output-dir", str(folder)],
+                            **run_args,
+                        )
+                        media_paths = sorted(
+                            (p for p in folder.rglob("*")
+                             if p.is_file() and p.suffix.lower() in
+                             {".jpg", ".jpeg", ".png", ".mp4", ".mov", ".webm"}),
+                            key=lambda p: str(p),
+                        )
+                        try:
+                            if media_proc.returncode:
+                                detail = (media_proc.stderr or "media not accessible")[-220:]
+                                raise RuntimeError(detail)
+                            send_instagram_media(token, chat, media_paths)
+                        except Exception as media_exc:
+                            send(token, chat, "Instagram media unavailable: " + str(media_exc)[-230:])
+                        if written:
+                            send_caption_text(token, chat, written)
+                        else:
+                            detail = (caption_proc.stderr or "no written caption available")[-220:]
+                            send(token, chat, "Instagram written caption unavailable: " + detail)
                     elif mode in {"choose", "ig_choose"}:
                         choice = db.execute(
                             "SELECT requester FROM format_choices WHERE request_id=? AND chat=?",

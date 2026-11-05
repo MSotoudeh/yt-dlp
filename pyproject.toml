@@ -12,6 +12,7 @@ dependencies = ["yt-dlp"]
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 asr = ["faster-whisper>=1.2,<2", "numpy>=1.24"]
+instagram = ["gallery-dl>=1.32,<2"]
 
 [project.scripts]
 ytdlp-tool = "ytdlp_tool.cli:main"

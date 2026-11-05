@@ -7,9 +7,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import subprocess
+import sys
 from urllib.parse import urlsplit
 
-from .media import MediaError, inspect_media
+from .media import MediaError, inspect_media, download_video
 from .transcribe import transcribe_media
 
 
@@ -71,3 +73,64 @@ def extract_spoken_text(
     )
     path = recognized.txt_path if output_format == "txt" else recognized.srt_path
     return InstagramTextResult(path, "asr", recognized.language)
+
+
+MEDIA_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".mp4", ".mov", ".webm"})
+
+
+def _download_gallery_media(url: str, destination: Path) -> tuple[Path, ...]:
+    """Download public gallery media without loading user configs or browser cookies."""
+    gallery = destination / "gallery"
+    gallery.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        sys.executable, "-m", "gallery_dl", "--config-ignore",
+        "--directory", str(gallery),
+        "--range", "1-20", "--filesize-max", "49M", url,
+    ]
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=120,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        raise MediaError(f"Instagram gallery retrieval failed: {exc}") from exc
+    files = sorted(
+        (p for p in gallery.rglob("*")
+         if p.is_file() and p.suffix.lower() in MEDIA_EXTENSIONS),
+        key=lambda p: p.name,
+    )
+    if result.returncode or not files:
+        problem = (result.stderr or result.stdout or "no accessible media").strip()
+        raise MediaError(f"Instagram gallery retrieval unavailable: {problem[-350:]}")
+    return tuple(files)
+
+
+def download_instagram_media(
+    url: str,
+    output_dir: str | Path = "output",
+) -> tuple[Path, ...]:
+    """Download accessible Reel video or public post media, without authentication bypass."""
+    validate_instagram_url(url)
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    if urlsplit(url).path.startswith(("/reel/", "/reels/", "/tv/")):
+        return (download_video(url, output / "video").path,)
+
+    try:
+        return _download_gallery_media(url, output)
+    except MediaError as gallery_error:
+        # Video-only Instagram /p/ URLs can be handled by yt-dlp, even when
+        # gallery-dl cannot access the gallery endpoint.
+        try:
+            result = download_video(url, output / "video")
+            video_files = sorted(
+                (p for p in (output / "video").rglob("*")
+                 if p.is_file() and p.suffix.lower() in MEDIA_EXTENSIONS),
+                key=lambda p: p.name,
+            )
+            return tuple(video_files) or (result.path,)
+        except MediaError as video_error:
+            raise MediaError(
+                f"Instagram photo/album not accessible without authorized login; "
+                f"gallery: {gallery_error}; video: {video_error}"
+            ) from video_error

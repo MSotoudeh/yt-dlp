@@ -242,7 +242,6 @@ def test_instagram_job_runs_only_selected_cli_workflow(monkeypatch, tmp_path):
     import ytdlp_tool.telegram_bot as bot
 
     for mode, command, fmt in [
-        ("ig_caption", "ig-caption", None),
         ("ig_txt", "ig-speech", "txt"),
         ("ig_srt", "ig-speech", "srt"),
     ]:
@@ -339,26 +338,30 @@ def test_bare_ig_caption_sends_author_text_in_telegram_without_asr(monkeypatch, 
 
     def fake_subprocess(cmd, **kwargs):
         commands.append(cmd)
-        assert "ig-caption" in cmd
         assert "ig-speech" not in cmd
         assert "--model" not in cmd
         destination = tmp_path / "downloads" / "999"
         destination.mkdir(parents=True, exist_ok=True)
-        (destination / "caption.txt").write_text(authored + "\n", encoding="utf-8")
-        return subprocess.CompletedProcess(cmd, 0, stdout="Source: instagram_post_caption\n", stderr="")
+        if "ig-caption" in cmd:
+            (destination / "instagram-ABC_def1-caption.txt").write_text(authored + "\n", encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, 0, stdout="Source: instagram_post_caption\n", stderr="")
+        assert "ig-media" in cmd
+        (destination / "reel.mp4").write_bytes(b"video")
+        return subprocess.CompletedProcess(cmd, 0, stdout="Media: reel.mp4\n", stderr="")
 
     monkeypatch.setattr(bot.subprocess, "run", fake_subprocess)
     monkeypatch.setattr(bot, "send", lambda token, chat, text, **kw: messages.append(text))
-    monkeypatch.setattr(bot, "upload", lambda token, chat, path: files.append(path.name))
+    monkeypatch.setattr(bot, "upload", lambda *a: pytest.fail("TXT must not be uploaded"))
+    monkeypatch.setattr(bot, "send_instagram_media", lambda token, chat, paths: files.extend(p.name for p in paths))
     monkeypatch.setenv("YTDL_TELEGRAM_BOT_TOKEN", "test-only")
     monkeypatch.setenv("YTDL_ALLOWED_CHAT_IDS", "100")
     monkeypatch.setattr(sys, "argv", [
         "bot", "--once", "--root", str(tmp_path), "--model-dir", str(tmp_path),
     ])
     bot.main()
-    assert len(commands) == 1
+    assert len(commands) == 2
     assert any(authored in m for m in messages)
-    assert any(name == "caption.txt" for name in files)
+    assert files == ["reel.mp4"]
     with sqlite3.connect(tmp_path / "jobs.sqlite") as db:
         assert db.execute("SELECT state FROM jobs WHERE update_id=999").fetchone() == ("done",)
 

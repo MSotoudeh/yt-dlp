@@ -19,7 +19,7 @@ from .media import (
     inspect_playlist,
     list_formats,
 )
-from .instagram import extract_post_caption, extract_spoken_text
+from .instagram import extract_post_caption, extract_spoken_text, download_instagram_media
 from .subtitles import SubtitleUnavailableError
 from .transcribe import TranscriptionError, transcribe_media
 from .transcript import get_preferred_transcript
@@ -28,7 +28,7 @@ from .transcript import get_preferred_transcript
 COMMANDS = {
     "subs", "info", "formats", "video", "audio",
     "thumbnail", "playlist", "clip", "comments", "transcribe", "transcript",
-    "ig-caption", "ig-speech",
+    "ig-caption", "ig-speech", "ig-media",
 }
 
 
@@ -104,6 +104,10 @@ def build_command_parser() -> argparse.ArgumentParser:
     transcript.add_argument("--model-dir", type=Path, default=None)
     transcript.add_argument("--cpu-threads", type=int, default=8)
     _add_output_dir(transcript)
+
+    ig_media = sub.add_parser("ig-media", help="Download accessible Instagram post or Reel media")
+    ig_media.add_argument("url")
+    _add_output_dir(ig_media)
 
     ig_caption = sub.add_parser("ig-caption", help="Save written caption of a public Instagram post or Reel")
     ig_caption.add_argument("url")
@@ -202,6 +206,11 @@ def _run_command(argv: list[str]) -> int:
             print(f"Saved: {path}")
         print(f"Source: {result.source}")
         print(f"Language: {result.language}")
+        return 0
+
+    if args.command == "ig-media":
+        for path in download_instagram_media(args.url, args.output_dir):
+            print(f"Media: {path}")
         return 0
 
     if args.command == "ig-caption":
