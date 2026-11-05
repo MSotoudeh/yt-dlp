@@ -207,3 +207,30 @@ def test_telegram_native_mixed_gif_and_images_sent_in_order(monkeypatch,tmp_path
     a.write_bytes(b"\xff\xd8\xff"); b.write_bytes(b"GIF89a");c.write_bytes(b"\x00\x00\x00\x14ftypisom")
     bot.send_native_media("token",11,[a,b,c])
     assert calls==["sendPhoto","sendAnimation","sendVideo"]
+
+
+def test_linkedin_media_upload_failure_marks_job_failed_but_still_sends_text(monkeypatch,tmp_path):
+    with sqlite3.connect(tmp_path/"jobs.sqlite") as db:
+        bot.setup(db)
+        bot.ingest(db,{"update_id":55,"message":{"chat":{"id":101,"type":"private"},
+                     "from":{"id":101},"text":PHOTO}})
+    events=[]
+    def fake_cli(cmd,**kw):
+        folder=tmp_path/"downloads"/"55"
+        folder.mkdir(parents=True,exist_ok=True)
+        (folder/"linkedin-7523661142766915584.txt").write_text("Author commentary survives",encoding="utf-8")
+        (folder/"01.jpg").write_bytes(b"\xff\xd8\xff")
+        return subprocess.CompletedProcess(cmd,0,stdout="",stderr="")
+    monkeypatch.setattr(bot.subprocess,"run",fake_cli)
+    monkeypatch.setattr(bot,"send_native_media",lambda *args:(_ for _ in ()).throw(RuntimeError("Telegram sendMediaGroup 429")))
+    monkeypatch.setattr(bot,"send_caption_text",lambda token,chat,text:events.append(("text",text)))
+    monkeypatch.setattr(bot,"send",lambda token,chat,text,**kw:events.append(("notice",text)))
+    monkeypatch.setenv("YTDL_TELEGRAM_BOT_TOKEN","test")
+    monkeypatch.setenv("YTDL_ALLOWED_CHAT_IDS","101")
+    monkeypatch.setattr(sys,"argv",["bot","--once","--root",str(tmp_path),"--model-dir",str(tmp_path)])
+    bot.main()
+    with sqlite3.connect(tmp_path/"jobs.sqlite") as db:
+        state,error=db.execute("SELECT state,error FROM jobs WHERE update_id=55").fetchone()
+    assert state=="failed", (state,error)
+    assert error and "Telegram sendMediaGroup 429" in error
+    assert any(kind=="text" and text=="Author commentary survives" for kind,text in events)

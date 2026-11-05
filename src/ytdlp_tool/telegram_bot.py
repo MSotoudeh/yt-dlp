@@ -378,6 +378,7 @@ def main():
                             try:
                                 send_native_media(token, chat, media_paths)
                             except Exception as exc:
+                                job_failure = "LinkedIn media delivery failed: " + str(exc)[-210:]
                                 send(token, chat, "LinkedIn media could not be delivered: " + str(exc)[-180:])
                         warnings = [line[9:].strip() for line in proc.stdout.splitlines()
                                     if line.startswith("Warning: ")]
