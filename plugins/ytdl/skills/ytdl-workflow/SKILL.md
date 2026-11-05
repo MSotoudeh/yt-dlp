@@ -43,6 +43,12 @@ Map natural-language requests to these commands:
   - default format: `txt`
   - use `--list` when the user asks which subtitle languages exist
 - Instagram Story URLs (`/stories/USERNAME/STORY_ID/`) have no reliably accessible standalone authored caption; overlay text requires OCR of pixels and stories typically require login. The bot recognizes them and explains the limitation rather than running any media processing.
+- LinkedIn public post media and authored text:
+  - CLI: li-post URL --output-dir output/chatgpt/linkedin-posts
+  - For a bare public LinkedIn post link, the Ops Telegram bot delivers native photos, video, or GIF (or accessible partial album) and then the author's written post commentary as a separate normal text message; no TXT attachment or OCR/ASR.
+  - Read only publicly embeddable posts; extract commentary and attached media, not OpenGraph previews, profile avatars or video speech transcript.
+  - Some multi-photo posts publicly expose only part of an album. Clearly report hidden slides (such as +4) and do not fabricate missing media or claim a complete album.
+  - No API key, cookies, LinkedIn login or media bypass. Private posts and changes to LinkedIn public Embed HTML can block access; report failures explicitly.
 - X/Twitter status media and original written text:
   `x-post URL --output-dir output\\chatgpt\\x-posts`
   - Bare URLs on x.com/twitter.com in Telegram automatically produce native photo/video/album, then a **separate** ordinary message with the original tweet text; no TXT attachment
@@ -129,6 +135,7 @@ For `--lang auto`, refuse a translation track unless it is confidently in the or
 - `@YTDL clip https://youtu.be/... 01:30 02:10` -> selected time range
 - `@YTDL comments https://youtu.be/... 20` -> up to 20 comments
 - `@YTDL transcribe https://www.instagram.com/reel/... --lang fa` -> audio + TXT/SRT
+- `@YTDL https://www.linkedin.com/posts/...-activity-ID-TOKEN` -> public LinkedIn attached media and separate authored text, with partial-album disclosure
 - `@YTDL https://x.com/USERNAME/status/ID` -> X/Twitter original post text plus attached media; report errors for protected content
 - `@YTDL https://www.instagram.com/reel/...` -> fetch authored Caption TXT (metadata only), or ask whether speech TXT/SRT is intended if ambiguous
 - `@YTDL ig-caption https://www.instagram.com/reel/...` -> authored Caption TXT

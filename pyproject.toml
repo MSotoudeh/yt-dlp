@@ -7,7 +7,7 @@ name = "ytdlp-tool"
 version = "0.3.0"
 description = "Reusable yt-dlp automation toolkit"
 requires-python = ">=3.11"
-dependencies = ["yt-dlp"]
+dependencies = ["yt-dlp", "requests>=2.32,<3"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

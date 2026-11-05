@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ytdl",
-  "version": "0.2.7",
-  "description": "Use YTDL on Ops for YouTube transcripts, Instagram photo/Reel posts and X/Twitter tweets, sending original media and text separately.",
+  "version": "0.2.8",
+  "description": "Use YTDL on Ops for YouTube transcripts and Instagram, X/Twitter and LinkedIn public posts with original media and separate authored text.",
   "author": {
     "name": "M. Sotoudeh"
   },
@@ -11,7 +11,7 @@
       "interface": {
         "displayName": "YTDL",
         "shortDescription": "Use yt-dlp on Ops",
-        "longDescription": "On Ops, extract original-language YouTube captions. For public Instagram and X/Twitter posts, retrieve original photos/videos and deliver written post text separately. No paid X API or automatic translation.",
+        "longDescription": "On Ops, extract original-language YouTube captions. For public Instagram, X/Twitter and LinkedIn posts, retrieve accessible photos/videos/GIFs and deliver the author-written text separately, without a login or paid API.",
         "developerName": "M. Sotoudeh",
         "category": "Productivity",
         "capabilities": [
@@ -22,7 +22,8 @@
           "Show the available formats for this URL.",
           "Extract audio from this URL.",
           "Extract this Instagram Reel's written caption or spoken TXT/SRT.",
-          "Retrieve the original media and tweet text from this public X/Twitter status URL."
+          "Retrieve the original media and tweet text from this public X/Twitter status URL.",
+          "Retrieve a public LinkedIn post’s photo, video or GIF and its original written caption separately."
         ]
       }
     }

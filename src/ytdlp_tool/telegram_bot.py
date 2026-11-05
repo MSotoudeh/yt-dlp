@@ -5,15 +5,18 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 MODES = {"audio", "video", "subs", "transcribe", "transcript", "choose", "txt", "srt",
-         "ig_choose", "ig_caption", "ig_txt", "ig_srt", "ig_story", "x_post"}
+         "ig_choose", "ig_caption", "ig_txt", "ig_srt", "ig_story", "x_post", "li_post"}
 ALIASES = {"igcaption": "ig_caption", "igtxt": "ig_txt",
            "igsrt": "ig_srt", "caption": "ig_caption",
-           "tweet": "x_post", "x": "x_post", "xpost": "x_post"}
+           "tweet": "x_post", "x": "x_post", "xpost": "x_post",
+           "linkedin": "li_post", "li": "li_post", "lipost": "li_post"}
 YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
 INSTAGRAM_HOSTS = {"instagram.com", "www.instagram.com", "m.instagram.com"}
 X_HOSTS = {"x.com", "www.x.com", "mobile.x.com", "twitter.com",
            "www.twitter.com", "mobile.twitter.com"}
-HOSTS = YOUTUBE_HOSTS | INSTAGRAM_HOSTS | X_HOSTS | {"vimeo.com", "www.vimeo.com"}
+LINKEDIN_HOSTS = {"linkedin.com", "www.linkedin.com", "it.linkedin.com",
+                  "de.linkedin.com", "fr.linkedin.com", "uk.linkedin.com"}
+HOSTS = YOUTUBE_HOSTS | INSTAGRAM_HOSTS | X_HOSTS | LINKEDIN_HOSTS | {"vimeo.com", "www.vimeo.com"}
 
 def parse(text):
     parts = text.strip().split(maxsplit=1)
@@ -26,7 +29,8 @@ def parse(text):
             return None
         mode = ("/choose" if host in YOUTUBE_HOSTS
                 else "/ig_caption" if host in INSTAGRAM_HOSTS
-                else "/x_post" if host in X_HOSTS else "/audio")
+                else "/x_post" if host in X_HOSTS
+                else "/li_post" if host in LINKEDIN_HOSTS else "/audio")
         parts = [mode, parts[0]]
     if len(parts) != 2:
         return None
@@ -37,6 +41,14 @@ def parse(text):
         if mode in MODES and u.scheme == "https" and u.hostname in HOSTS and u.port in (None, 443) and not u.username and not u.password:
             if mode in {"choose", "txt", "srt", "transcript", "subs"} and u.hostname not in YOUTUBE_HOSTS:
                 return None
+            if mode == "li_post":
+                if u.hostname not in LINKEDIN_HOSTS:
+                    return None
+                from .linkedin import validate_post_url
+                try:
+                    validate_post_url(parts[1])
+                except ValueError:
+                    return None
             if mode == "x_post":
                 if u.hostname not in X_HOSTS:
                     return None
@@ -134,7 +146,7 @@ def send_instagram_media(token, chat, paths):
         raise ValueError("No Instagram media to send")
 
     types = {".jpg": "photo", ".jpeg": "photo", ".png": "photo",
-             ".mp4": "video"}
+             ".mp4": "video", ".gif": "animation"}
     for start in range(0, len(paths), 10):
         batch = paths[start:start + 10]
         items = []
@@ -161,8 +173,10 @@ def send_instagram_media(token, chat, paths):
         chunks.append(field("chat_id", chat))
         if len(items) == 1:
             kind, _ = items[0]
-            method = "sendPhoto" if kind == "photo" else "sendVideo"
+            method = {"photo": "sendPhoto", "video": "sendVideo", "animation": "sendAnimation"}[kind]
         else:
+            if any(kind == "animation" for kind, _ in items):
+                raise ValueError("Telegram media groups cannot include GIF animations")
             method = "sendMediaGroup"
             media = [
                 {"type": kind, "media": f"attach://media{i}"}
@@ -171,9 +185,9 @@ def send_instagram_media(token, chat, paths):
             chunks.append(field("media", json.dumps(media, separators=(",", ":"))))
         for i, (kind, path) in enumerate(items):
             field_name = f"media{i}" if len(items) > 1 else kind
-            media_type = "image/jpeg" if path.suffix.lower() in (".jpg", ".jpeg") else (
-                "image/png" if kind == "photo" else "video/mp4"
-            )
+            media_type = ("image/gif" if kind == "animation" else
+                          "image/jpeg" if path.suffix.lower() in (".jpg", ".jpeg") else
+                          "image/png" if kind == "photo" else "video/mp4")
             # Avoid non-ASCII header filename encoding, which fails for Instagram
             # captions/titles with Unicode punctuation on Windows.
             filename = f"instagram-{i}{path.suffix.lower()}"
@@ -197,8 +211,19 @@ def send_instagram_media(token, chat, paths):
 
 
 def send_native_media(token, chat, paths):
-    """Native Telegram photo/video or album; reuse the verified uploader."""
-    return send_instagram_media(token, chat, paths)
+    """Send native photos/videos in order; animated GIFs individually (Telegram limitation)."""
+    batch = []
+    for path in paths:
+        path = Path(path)
+        if path.suffix.lower() == ".gif":
+            if batch:
+                send_instagram_media(token, chat, batch)
+                batch.clear()
+            send_instagram_media(token, chat, [path])
+        else:
+            batch.append(path)
+    if batch:
+        send_instagram_media(token, chat, batch)
 
 
 def setup(db):
@@ -265,7 +290,7 @@ def ingest(db, item):
     parsed = parse(raw)
     if parsed is None:
         import re
-        candidate = re.search(r'https://(?:(?:www|mobile)\.)?(?:youtu\.be|youtube\.com|vimeo\.com|instagram\.com|x\.com|twitter\.com)/[^\s<>]+', raw, re.I)
+        candidate = re.search(r'https://(?:(?:www|mobile|[a-z]{2,3})\.)?(?:youtu\.be|youtube\.com|vimeo\.com|instagram\.com|x\.com|twitter\.com|linkedin\.com)/[^\s<>]+', raw, re.I)
         if candidate:
             parsed = parse(candidate.group(0))
     parsed = parsed or ("invalid", "")
@@ -324,11 +349,47 @@ def main():
                 try:
                     job_failure = None
                     if mode == "help":
-                        send(token, chat, "Paste a public Instagram or X/Twitter post URL for native photo/video followed by authored text in a separate message (no TXT attachment). For speech use /igtxt URL or /igsrt URL; optional menu: /ig_choose URL. YouTube: TXT or SRT choice. Instagram Stories often have overlay text requiring OCR and login.")
+                        send(token, chat, "Paste a public Instagram, X/Twitter or LinkedIn post URL for native photo/video followed by authored text in a separate message (no TXT attachment). For speech use /igtxt URL or /igsrt URL; optional menu: /ig_choose URL. YouTube: TXT or SRT choice. Instagram Stories often have overlay text requiring OCR and login.")
                     elif mode == "invalid":
-                        send(token, chat, "Unsupported link. Send an Instagram /reel/ or /p/ link, or a YouTube video link.")
+                        send(token, chat, "Unsupported link. Send an Instagram post/Reel, X/Twitter status, LinkedIn public post or YouTube link.")
                     elif mode == "ig_story":
                         send(token, chat, "Instagram Story: there is generally no separate written post caption to retrieve from public metadata. Text displayed on a Story is embedded in its image/video, requiring OCR; Stories commonly require login. No audio, video or OCR was processed.")
+                    elif mode == "li_post":
+                        folder = root/"downloads"/str(uid)
+                        folder.mkdir(parents=True, exist_ok=True)
+                        cmd = [args.python, "-m", "ytdlp_tool", "li-post", url,
+                               "--output-dir", str(folder)]
+                        proc = subprocess.run(
+                            cmd, capture_output=True, text=True, timeout=240,
+                            encoding="utf-8", errors="replace",
+                            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+                        )
+                        if proc.returncode:
+                            raise RuntimeError("LinkedIn post unavailable: " + (proc.stderr or "retrieval failed")[-240:])
+                        text_files = list(folder.glob("linkedin-*.txt"))
+                        if len(text_files) != 1:
+                            raise RuntimeError("LinkedIn post text result missing")
+                        media_paths = sorted(
+                            (p for p in folder.rglob("*") if p.is_file()
+                             and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".mp4", ".gif"}),
+                            key=lambda p: str(p)
+                        )
+                        if media_paths:
+                            try:
+                                send_native_media(token, chat, media_paths)
+                            except Exception as exc:
+                                send(token, chat, "LinkedIn media could not be delivered: " + str(exc)[-180:])
+                        warnings = [line[9:].strip() for line in proc.stdout.splitlines()
+                                    if line.startswith("Warning: ")]
+                        if warnings:
+                            send(token, chat, "Some LinkedIn media unavailable or hidden: " + "; ".join(warnings)[-450:])
+                        authored = text_files[0].read_text(encoding="utf-8").strip()
+                        if authored:
+                            send_caption_text(token, chat, authored)
+                        elif media_paths:
+                            send(token, chat, "This LinkedIn post has no accessible written text.")
+                        else:
+                            raise RuntimeError("LinkedIn post contains neither accessible text nor media")
                     elif mode == "x_post":
                         folder = root/"downloads"/str(uid)
                         folder.mkdir(parents=True, exist_ok=True)
