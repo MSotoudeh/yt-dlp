@@ -172,12 +172,14 @@ IG_URL = "https://www.instagram.com/reel/ABC_def1/"
 
 
 def test_instagram_bare_link_routes_to_three_choice_keyboard():
-    assert parse(IG_URL) == ("ig_choose", IG_URL)
+    assert parse(IG_URL) == ("ig_caption", IG_URL)
+    assert parse("/ig_choose " + IG_URL) == ("ig_choose", IG_URL)
+    assert parse("https://instagram.com/stories/creator/123456789/") == ("ig_story", "https://instagram.com/stories/creator/123456789/")
     assert parse("/igcaption " + IG_URL) == ("ig_caption", IG_URL)
     assert parse("/caption " + IG_URL) == ("ig_caption", IG_URL)
     assert parse("/igtxt " + IG_URL) == ("ig_txt", IG_URL)
     assert parse("/igsrt " + IG_URL) == ("ig_srt", IG_URL)
-    assert parse("/igcaption https://www.instagram.com/stories/creator/123") is None
+    assert parse("/igcaption https://www.instagram.com/stories/creator/123") == ("ig_story", "https://www.instagram.com/stories/creator/123")
     assert parse("/igcaption https://youtube.com/watch?v=test") is None
     assert parse("/srt " + IG_URL) is None
 
@@ -185,7 +187,7 @@ def test_instagram_bare_link_routes_to_three_choice_keyboard():
     setup(db)
     ingest(db, {"update_id": 302, "message": {
         "chat": {"id": 71, "type": "private"}, "from": {"id": 71},
-        "text": "Watch this " + IG_URL,
+        "text": "/ig_choose " + IG_URL,
     }})
     assert db.execute("SELECT mode,url FROM jobs").fetchone() == ("ig_choose", IG_URL)
     keyboard = format_keyboard(302, "instagram")
@@ -200,7 +202,7 @@ def test_instagram_callback_enforces_owner_and_platform():
     setup(db)
     ingest(db, {"update_id": 401, "message": {
         "chat": {"id": 71, "type": "private"}, "from": {"id": 71},
-        "text": IG_URL,
+        "text": "/ig_choose " + IG_URL,
     }})
     assert "Invalid" in ingest(db, _cb(402, 80, 71, "fmt:ig_txt:401"))
     assert "Invalid" in ingest(db, _cb(403, 71, 71, "fmt:srt:401"))
@@ -219,7 +221,7 @@ def test_instagram_keyboard_is_sent_without_download(monkeypatch, tmp_path):
         setup(db)
         ingest(db, {"update_id": 501, "message": {
             "chat": {"id": 22, "type": "private"}, "from": {"id": 22},
-            "text": IG_URL,
+            "text": "/ig_choose " + IG_URL,
         }})
     sent = []
     monkeypatch.setattr(bot, "send", lambda token, chat, text, **kw: sent.append(kw))
@@ -279,3 +281,119 @@ def test_instagram_job_runs_only_selected_cli_workflow(monkeypatch, tmp_path):
         assert sent_files == ["." + (fmt or "txt")]
         with sqlite3.connect(root / "jobs.sqlite") as db:
             assert db.execute("SELECT state FROM jobs").fetchone() == ("done",)
+
+
+def test_instagram_bare_link_queues_caption_immediately_no_buttons():
+    from ytdlp_tool.telegram_bot import parse, ingest
+    db = sqlite3.connect(":memory:")
+    setup(db)
+    url = "https://www.instagram.com/p/ABC_def1/"
+    assert parse(url) == ("ig_caption", url)
+    assert parse("https://www.instagram.com/reels/ABC_def1/?igsh=abc")[0] == "ig_caption"
+    ingest(db, {"update_id": 610, "message": {
+        "chat": {"id": 12, "type": "private"},
+        "from": {"id": 12}, "text": "See this " + url,
+    }})
+    assert db.execute("SELECT mode,url FROM jobs").fetchone() == ("ig_caption", url)
+    assert db.execute("SELECT COUNT(*) FROM format_choices").fetchone()[0] == 0
+
+
+def test_story_link_is_recognized_and_does_not_download_media():
+    from ytdlp_tool.telegram_bot import parse, ingest
+    link = "https://www.instagram.com/stories/some.creator/3812345678901234567/?igsh=abc"
+    assert parse(link) == ("ig_story", link)
+    assert parse("/igcaption " + link) == ("ig_story", link)
+    assert parse("https://www.instagram.com/stories/some.creator/") is None
+    db = sqlite3.connect(":memory:")
+    setup(db)
+    ingest(db, {"update_id": 801, "message": {
+        "chat": {"id": 44, "type": "private"}, "text": link,
+    }})
+    assert db.execute("SELECT mode FROM jobs").fetchone()[0] == "ig_story"
+
+
+def test_send_long_caption_in_multiple_messages_without_truncating(monkeypatch):
+    import ytdlp_tool.telegram_bot as bot
+    parts = []
+    monkeypatch.setattr(bot, "send", lambda token, chat, text, **kw: parts.append(text))
+    caption = ("Test caption ✨\n" * 700)
+    bot.send_caption_text("test", 123, caption)
+    assert len(parts) > 1
+    assert all(len(part.encode("utf-16-le")) // 2 <= 4096 for part in parts)
+    assert "".join(parts) == caption
+
+
+def test_bare_ig_caption_sends_author_text_in_telegram_without_asr(monkeypatch, tmp_path):
+    import sys
+    import subprocess
+    import ytdlp_tool.telegram_bot as bot
+
+    with sqlite3.connect(tmp_path / "jobs.sqlite") as db:
+        setup(db)
+        ingest(db, {"update_id": 999, "message": {
+            "chat": {"id": 100, "type": "private"},
+            "from": {"id": 100}, "text": IG_URL,
+        }})
+    commands, messages, files = [], [], []
+    authored = "Author text 🔥\n#instagram"
+
+    def fake_subprocess(cmd, **kwargs):
+        commands.append(cmd)
+        assert "ig-caption" in cmd
+        assert "ig-speech" not in cmd
+        assert "--model" not in cmd
+        destination = tmp_path / "downloads" / "999"
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / "caption.txt").write_text(authored + "\n", encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, stdout="Source: instagram_post_caption\n", stderr="")
+
+    monkeypatch.setattr(bot.subprocess, "run", fake_subprocess)
+    monkeypatch.setattr(bot, "send", lambda token, chat, text, **kw: messages.append(text))
+    monkeypatch.setattr(bot, "upload", lambda token, chat, path: files.append(path.name))
+    monkeypatch.setenv("YTDL_TELEGRAM_BOT_TOKEN", "test-only")
+    monkeypatch.setenv("YTDL_ALLOWED_CHAT_IDS", "100")
+    monkeypatch.setattr(sys, "argv", [
+        "bot", "--once", "--root", str(tmp_path), "--model-dir", str(tmp_path),
+    ])
+    bot.main()
+    assert len(commands) == 1
+    assert any(authored in m for m in messages)
+    assert any(name == "caption.txt" for name in files)
+    with sqlite3.connect(tmp_path / "jobs.sqlite") as db:
+        assert db.execute("SELECT state FROM jobs WHERE update_id=999").fetchone() == ("done",)
+
+
+def test_story_job_reports_metadata_limit_without_media_or_asr(monkeypatch, tmp_path):
+    import sys
+    import ytdlp_tool.telegram_bot as bot
+
+    story = "https://www.instagram.com/stories/some.creator/3812345678901234567/"
+    with sqlite3.connect(tmp_path / "jobs.sqlite") as db:
+        setup(db)
+        ingest(db, {"update_id": 5671, "message": {
+            "chat": {"id": 10, "type": "private"}, "text": story,
+        }})
+    messages = []
+    monkeypatch.setattr(bot, "send", lambda token, chat, text, **kw: messages.append(text))
+    monkeypatch.setattr(bot.subprocess, "run", lambda *a, **kw: (
+        _ for _ in ()).throw(AssertionError("Story must not download or run ASR")))
+    monkeypatch.setenv("YTDL_TELEGRAM_BOT_TOKEN", "test")
+    monkeypatch.setenv("YTDL_ALLOWED_CHAT_IDS", "10")
+    monkeypatch.setattr(sys, "argv", [
+        "bot", "--once", "--root", str(tmp_path), "--model-dir", str(tmp_path),
+    ])
+    bot.main()
+    assert len(messages) == 1
+    assert "OCR" in messages[0]
+    with sqlite3.connect(tmp_path / "jobs.sqlite") as db:
+        assert db.execute("SELECT state FROM jobs").fetchone()[0] == "done"
+
+
+def test_caption_text_split_handles_only_emoji_and_no_character_loss(monkeypatch):
+    import ytdlp_tool.telegram_bot as bot
+    sent = []
+    monkeypatch.setattr(bot, "send", lambda token, chat, text, **kw: sent.append(text))
+    content = "🔥" * 4101
+    bot.send_caption_text("test", 123, content)
+    assert "".join(sent) == content
+    assert max(len(s.encode("utf-16-le")) // 2 for s in sent) <= 4096

@@ -25,11 +25,10 @@ Never commit token or reveal it in logs. The existing bot token remains in the p
 
 ## Instagram post/reel text and speech
 
-- Paste a public `https://www.instagram.com/reel/SHORTCODE/`, `/reels/SHORTCODE/`, `/p/SHORTCODE/` or `/tv/SHORTCODE/` link. The bot offers three inline choices:
-  - **Caption - Post description**: fetches the author's written description from Instagram metadata and exports a UTF-8 TXT; neither audio/video download nor ASR is needed.
-  - **Speech TXT**: extracts original audio and uses the cached local multilingual Whisper model to write spoken text in the source language.
-  - **Speech SRT**: the same audio-to-text process but delivers only the timestamped SRT output.
-- Direct commands: `/igcaption URL`, `/igtxt URL`, `/igsrt URL`. `/caption URL` aliases `/igcaption URL`. CLI equivalents: `ig-caption URL` and `ig-speech URL --format txt|srt`.
+- Paste a public `https://www.instagram.com/reel/SHORTCODE/`, `/reels/SHORTCODE/`, `/p/SHORTCODE/` or `/tv/SHORTCODE/` link. **By default the bot immediately retrieves and sends the author's written post description as normal Telegram text and a UTF-8 TXT attachment, without choosing a button or processing audio/video.** Long captions are sent in multiple complete Telegram messages, without truncation.
+- Optional **Speech TXT** or **Speech SRT**: send `/igtxt URL` or `/igsrt URL` to run local multilingual Whisper on original audio. The optional `/ig_choose URL` command presents the previous three-choice inline menu.
+- **Story URLs** (`/stories/USERNAME/STORY_ID/`) are recognized, but their text is usually an overlay on image/video, not a standalone metadata caption. The bot reports that limitation without downloading media or using OCR/ASR. Private/login-gated stories additionally require appropriate authorized access.
+- Direct commands: `/igcaption URL`, `/igtxt URL`, `/igsrt URL`, `/ig_choose URL`. `/caption URL` aliases `/igcaption URL`. CLI equivalents: `ig-caption URL` and `ig-speech URL --format txt|srt`.
 - **Do not confuse the authored Instagram caption with video speech**. Native Instagram auto-captions/hardcoded video text are not independently accessible through yt-dlp; spoken text uses ASR. OCR of text burned into the image is **not implemented** (a separate, explicitly chosen workflow would be needed).
 - Only public accessible content is supported without user-granted authentication. No cookies are inspected or extracted. A missing/blocked caption produces an explicit error, never fabricated text.
-- Telegram inline callbacks are bound to the requesting chat/user, and repeat clicks are deduplicated. Selecting a caption never starts ASR.
+- Optional Telegram inline callbacks are bound to the requesting chat/user, and repeat clicks are deduplicated. Automatic Caption retrieval never starts ASR.

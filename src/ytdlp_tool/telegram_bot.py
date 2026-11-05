@@ -5,7 +5,7 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 MODES = {"audio", "video", "subs", "transcribe", "transcript", "choose", "txt", "srt",
-         "ig_choose", "ig_caption", "ig_txt", "ig_srt"}
+         "ig_choose", "ig_caption", "ig_txt", "ig_srt", "ig_story"}
 ALIASES = {"igcaption": "ig_caption", "igtxt": "ig_txt",
            "igsrt": "ig_srt", "caption": "ig_caption"}
 YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
@@ -21,7 +21,7 @@ def parse(text):
             host = urlsplit(parts[0]).hostname
         except ValueError:
             return None
-        mode = "/choose" if host in YOUTUBE_HOSTS else ("/ig_choose" if host in INSTAGRAM_HOSTS else "/audio")
+        mode = "/choose" if host in YOUTUBE_HOSTS else ("/ig_caption" if host in INSTAGRAM_HOSTS else "/audio")
         parts = [mode, parts[0]]
     if len(parts) != 2:
         return None
@@ -32,8 +32,17 @@ def parse(text):
         if mode in MODES and u.scheme == "https" and u.hostname in HOSTS and u.port in (None, 443) and not u.username and not u.password:
             if mode in {"choose", "txt", "srt", "transcript", "subs"} and u.hostname not in YOUTUBE_HOSTS:
                 return None
-            if mode in {"ig_choose", "ig_caption", "ig_txt", "ig_srt"}:
-                if u.hostname not in INSTAGRAM_HOSTS:
+            if u.hostname in INSTAGRAM_HOSTS:
+                import re
+                is_story = bool(re.fullmatch(
+                    r"/stories/[A-Za-z0-9._]+/[0-9]+/?", u.path
+                ))
+                if is_story:
+                    if mode == "ig_caption" or mode == "ig_story":
+                        return "ig_story", parts[1]
+                    return None
+            if mode in {"ig_choose", "ig_caption", "ig_txt", "ig_srt", "ig_story"}:
+                if u.hostname not in INSTAGRAM_HOSTS or mode == "ig_story":
                     return None
                 from .instagram import validate_instagram_url
                 try:
@@ -74,6 +83,15 @@ def format_keyboard(request_id, platform="youtube"):
         {"text": "TXT - Plain text", "callback_data": f"fmt:txt:{request_id}"},
         {"text": "SRT - Timed subtitles", "callback_data": f"fmt:srt:{request_id}"},
     ]]}
+
+def send_caption_text(token, chat, caption):
+    """Send full original Unicode caption without Telegram's 4096 UTF-16 limit truncation."""
+    if not caption:
+        raise ValueError("Cannot send an empty caption")
+    # 1800 code points are < 4096 UTF-16 units, even if every char is astral.
+    for pos in range(0, len(caption), 1800):
+        send(token, chat, caption[pos:pos + 1800])
+
 
 def upload(token, chat, path):
     if path.stat().st_size > 49 * 1024 * 1024:
@@ -216,9 +234,11 @@ def main():
                 uid, chat, mode, url = job
                 try:
                     if mode == "help":
-                        send(token, chat, "YouTube: choose TXT or SRT. Instagram: choose Caption (post text), Speech TXT, or Speech SRT. Direct: /txt URL | /srt URL | /igcaption URL | /igtxt URL | /igsrt URL | /audio URL | /video URL | /transcribe URL")
+                        send(token, chat, "Paste a public Instagram post/Reel URL to receive its written caption automatically (no audio/video processing). For speech use /igtxt URL or /igsrt URL; optional menu: /ig_choose URL. YouTube: TXT or SRT choice. Instagram Stories often have overlay text requiring OCR and login.")
                     elif mode == "invalid":
                         send(token, chat, "Unsupported link. Send an Instagram /reel/ or /p/ link, or a YouTube video link.")
+                    elif mode == "ig_story":
+                        send(token, chat, "Instagram Story: there is generally no separate written post caption to retrieve from public metadata. Text displayed on a Story is embedded in its image/video, requiring OCR; Stories commonly require login. No audio, video or OCR was processed.")
                     elif mode in {"choose", "ig_choose"}:
                         choice = db.execute(
                             "SELECT requester FROM format_choices WHERE request_id=? AND chat=?",
@@ -233,7 +253,8 @@ def main():
                             send(token, chat, "Choose original-language transcript format:",
                                  keyboard=format_keyboard(uid))
                     else:
-                        send(token, chat, "Job accepted: " + str(uid))
+                        if mode != "ig_caption":
+                            send(token, chat, "Job accepted: " + str(uid))
                         folder = root/"downloads"/str(uid)
                         folder.mkdir(parents=True, exist_ok=True)
                         command_mode = {
@@ -256,11 +277,19 @@ def main():
                             selected_ext = "srt" if mode.endswith("srt") else "txt"
                             names = [p for p in names if p.suffix == "." + selected_ext]
                         if not names: raise RuntimeError("No output files produced")
+                        if mode == "ig_caption":
+                            if len(names) != 1:
+                                raise RuntimeError("Expected exactly one caption text file")
+                            caption_text = names[0].read_text(encoding="utf-8").strip()
+                            if not caption_text:
+                                raise RuntimeError("Instagram caption is empty")
+                            send_caption_text(token, chat, caption_text)
                         for path in names[:4]:
                             upload(token, chat, path)
                         source = next((line[8:].strip() for line in proc.stdout.splitlines() if line.startswith("Source: ")), None)
                         source_label = ("; source=" + source) if source else ""
-                        send(token, chat, "Completed job " + str(uid) + source_label)
+                        if mode != "ig_caption":
+                            send(token, chat, "Completed job " + str(uid) + source_label)
                     db.execute("UPDATE jobs SET state='done' WHERE update_id=?", (uid,))
                 except Exception as exc:
                     db.execute("UPDATE jobs SET state='failed',error=? WHERE update_id=?", (str(exc)[:300],uid))

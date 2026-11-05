@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ytdl",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Use YTDL on Ops for original-language YouTube transcripts, Instagram post captions, spoken TXT/SRT and media tasks.",
   "author": {
     "name": "M. Sotoudeh"

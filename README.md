@@ -91,7 +91,7 @@ The independent Telegram bot displays inline **TXT (plain text)** and **SRT (tim
 
 ## Instagram caption and speech
 
-The private `@You_TubeDL_bot` supports an Instagram post/Reel URL with three choices: **Caption** (the author's text in metadata, without downloading media), **Speech TXT**, or **Speech SRT** (local Whisper on the original spoken audio). OCR for text burned into video is not included. Only public content reachable through yt-dlp is supported without login; 403/login walls remain explicit errors.
+The private `@You_TubeDL_bot` automatically sends an Instagram public post/Reel's **written author caption as Telegram text plus TXT** when receiving a bare URL. No button, video download, image extraction, or ASR is required. To transcribe speech instead, use `/igtxt URL` or `/igsrt URL`; `/ig_choose URL` opens the optional Caption/Speech TXT/Speech SRT menu. Instagram Story URLs are detected, but text drawn over Stories requires OCR of the media and is not accessible as standalone post-caption metadata. Story login restrictions remain in effect. OCR is not included; 403/login walls remain explicit errors.
 
 ```powershell
 ytdlp-tool ig-caption "https://www.instagram.com/reel/SHORTCODE/"

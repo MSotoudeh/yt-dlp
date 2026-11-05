@@ -25,7 +25,7 @@ When the user invokes YTDL with only a YouTube URL and no operation, interpret i
 & .\output\chatgpt\asr-venv\Scripts\python.exe -m ytdlp_tool transcript "URL" --lang auto --model large-v3 --model-dir output\chatgpt\asr-models --output-dir output\chatgpt\transcripts
 ```
 
-For a YouTube URL alone, ONLY use YouTube's published captions in the video's original SPOKEN language (manual first, then native-language automatic, e.g. `de-orig`). Do not automatically select machine-translated Persian/English captions for non-Persian/non-English speech. If native captions are absent or cannot be reliably identified, run ASR on the ORIGINAL audio, retaining that original language; downstream LLM translation is a separate, optional operation. Never treat YouTube access errors, timeouts, or caption-download failures as proof of absent captions; report them instead. Report transcript provenance (`youtube_manual`, `youtube_automatic`, or `asr`). For an Instagram post or Reel URL alone, report that the Telegram bot offers three choices: written Caption, spoken TXT, spoken SRT. For direct YTDL requests, distinguish author's caption from spoken transcript; if the user does not specify which, retrieve the authored caption first, without any media download. Never silently download a full video for a text-only request.
+For a YouTube URL alone, ONLY use YouTube's published captions in the video's original SPOKEN language (manual first, then native-language automatic, e.g. `de-orig`). Do not automatically select machine-translated Persian/English captions for non-Persian/non-English speech. If native captions are absent or cannot be reliably identified, run ASR on the ORIGINAL audio, retaining that original language; downstream LLM translation is a separate, optional operation. Never treat YouTube access errors, timeouts, or caption-download failures as proof of absent captions; report them instead. Report transcript provenance (`youtube_manual`, `youtube_automatic`, or `asr`). For an Instagram post or Reel URL alone, the Telegram bot now **automatically sends the author's written post caption as ordinary Telegram text and a TXT file**, no button required, no audio/video/ASR. Spoken TXT/SRT remain available on explicit `/igtxt URL` or `/igsrt URL`; `/ig_choose URL` opens an optional format menu. For direct YTDL requests without a specified format, retrieve the author's caption first with no media download. Never silently download a full video for a text-only request.
 
 After completion, read the generated TXT file and return its contents or summarize it according to the user's request.
 
@@ -42,6 +42,7 @@ Map natural-language requests to these commands:
   - default language: `auto`
   - default format: `txt`
   - use `--list` when the user asks which subtitle languages exist
+- Instagram Story URLs (`/stories/USERNAME/STORY_ID/`) have no reliably accessible standalone authored caption; overlay text requires OCR of pixels and stories typically require login. The bot recognizes them and explains the limitation rather than running any media processing.
 - Instagram written post/Reel caption / text under post:
   `ig-caption URL --output-dir output\\chatgpt\\instagram-caption`
   - Reads metadata only, saves UTF-8 TXT; does not download audio/video or run ASR
