@@ -239,4 +239,4 @@ Retrieval uses LinkedIn's public Embed view for the post's numeric activity ID, 
 
 **Limitations:** This is HTML parsing, not a stable LinkedIn API. Protected, deleted and login-restricted posts cannot be guaranteed. Some public embeds hide album slides: a real nine-photo post exposed only five images with a +4 label. The bot sends those five and explicitly reports the four missing items. Text means the author's written post caption, **not** speech transcription or subtitles on video. Video and image format limitations remain explicit.
 
-Real Ops smoke tests on 2026-11-05 covered public MP4 video, five-photo gallery, 11 MB animated GIF and a text-only post, including a full real retrieval path through the bot with recorded Telegram transport.
+Real Ops smoke tests on 2026-11-05 covered public MP4 video, a five-photo gallery, an 11 MB animated GIF and a text-only post. Three separate live Telegram jobs, for sendVideo, sendMediaGroup and sendAnimation followed by normal text messages, reached SQLite state done without an error after the media-send error-state fix. All results were sent only to the existing private allowlisted chat.
