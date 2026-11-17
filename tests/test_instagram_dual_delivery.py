@@ -1,7 +1,6 @@
 
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
 import ytdlp_tool.instagram as ig
@@ -124,7 +123,6 @@ def test_failed_media_still_sends_caption_and_explains_failure(monkeypatch, tmp_
 
 def test_telegram_native_photo_video_upload_and_album(monkeypatch, tmp_path):
     import io
-    import json
     import ytdlp_tool.telegram_bot as bot
 
     class FakeResponse:

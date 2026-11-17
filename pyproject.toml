@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ytdlp-tool"
-version = "0.3.0"
+version = "0.4.0"
 description = "Reusable yt-dlp automation toolkit"
 requires-python = ">=3.11"
-dependencies = ["yt-dlp", "requests>=2.32,<3"]
+dependencies = ["yt-dlp>=2026.8.19", "requests>=2.32,<3"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.6"]
 asr = ["faster-whisper>=1.2,<2", "numpy>=1.24"]
 instagram = ["gallery-dl>=1.32,<2", "instaloader>=4.16,<5"]
 
@@ -22,3 +22,17 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B"]
+ignore = ["E501"]  # a few long literals (Telegram texts, regexes) are clearer unbroken
+
+[tool.ruff.lint.per-file-ignores]
+# One-off benchmark scripts keep their compact historical style.
+"scripts/*" = ["E701", "E702", "E741", "E731", "E722", "B007", "B023"]
+# Test fakes are closures that run inside the loop iteration that creates them.
+"tests/*" = ["B023", "E701", "E702"]

@@ -13,7 +13,6 @@ import time
 import traceback
 
 def preload_cuda():
-    import site
     root=Path(sys.executable).resolve().parents[1]/"Lib"/"site-packages"/"nvidia"
     paths=[]
     handles=[]
@@ -52,7 +51,7 @@ def main():
     try:
         import numpy as np
         from ytdlp_tool.transcribe import _decode_pcm
-        handles=preload_cuda()
+        preload_cuda()
         from faster_whisper import WhisperModel
         audio=_decode_pcm(args.audio)
         if audio.ndim!=1:raise ValueError("Expected mono WAV")

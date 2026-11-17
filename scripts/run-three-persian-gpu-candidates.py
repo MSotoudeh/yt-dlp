@@ -12,9 +12,7 @@ from pathlib import Path
 import shutil
 import sqlite3
 import subprocess
-import sys
 import time
-import traceback
 import zipfile
 
 REPO=Path(r"C:\GitHub\yt-dlp")

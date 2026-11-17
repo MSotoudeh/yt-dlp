@@ -8,7 +8,6 @@ import argparse
 import json
 from pathlib import Path
 import sqlite3
-import sys
 import zipfile
 
 MODELS=["c1tech","buzz","cv17","qwen"]
@@ -67,7 +66,11 @@ def main():
             "CPU and CUDA may use different precision; durations include model initialization.\n"
             "A BuzzASR native decoding retry replaces its earlier incorrect empty output.\n"
             "CV17 public model card exists but model weights require Hugging Face access.\n")
-    import itertools, difflib, re, csv, io
+    import itertools
+    import difflib
+    import re
+    import csv
+    import io
     words=lambda txt: re.findall(r"[^\\W_]+", txt.casefold(), flags=re.UNICODE)
     by_name={name:words(path.read_text(encoding="utf-8")) for path,name in sources}
     buffer=io.StringIO()
@@ -101,7 +104,7 @@ def main():
             resp=requests.post(api,data={"chat_id":matches[0][0],"caption":cap},
                     files={"document":(out.name,f,"application/zip")},timeout=120)
         except requests.RequestException:
-            raise RuntimeError("Telegram upload request failed (details suppressed)")
+            raise RuntimeError("Telegram upload request failed (details suppressed)") from None
     if resp.status_code!=200:
         raise RuntimeError("Telegram document upload HTTP status "+str(resp.status_code))
     if not resp.json().get("ok"):raise RuntimeError("Telegram declined document")

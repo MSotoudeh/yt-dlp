@@ -7,9 +7,7 @@ WER/CER on manually corrected chunks. No transcript is uploaded to web.
 from pathlib import Path
 import argparse
 import json
-import shutil
 import sqlite3
-import sys
 import zipfile
 
 ROOT=Path(r"C:\ProgramData\ytdlp-bot")

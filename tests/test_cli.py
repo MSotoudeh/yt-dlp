@@ -63,3 +63,14 @@ def test_unavailable_language_returns_one(monkeypatch, capsys):
     code = cli.main(["https://youtu.be/abc", "--lang", "fa"])
     assert code == 1
     assert "unavailable" in capsys.readouterr().err
+
+
+def test_package_version_matches_pyproject():
+    import tomllib
+    from pathlib import Path
+
+    import ytdlp_tool
+
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    declared = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
+    assert ytdlp_tool.__version__ == declared

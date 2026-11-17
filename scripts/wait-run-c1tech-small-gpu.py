@@ -7,7 +7,6 @@ from pathlib import Path
 import json
 import os
 import subprocess
-import sys
 import time
 
 REPO=Path(r"C:\GitHub\yt-dlp")

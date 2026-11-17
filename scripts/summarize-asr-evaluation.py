@@ -4,7 +4,6 @@ No raw transcript or account credentials are committed to Git.
 """
 from pathlib import Path
 import json
-import datetime
 
 root=Path(r"C:\ProgramData\ytdlp-bot\asr-four-models")
 dest=Path(r"C:\GitHub\yt-dlp\docs\persian-asr-four-models-2026-10-09.md")
