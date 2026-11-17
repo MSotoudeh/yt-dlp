@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "YTDLP Digital Concert Hall bridge",
+  "version": "1.0.0",
+  "description": "Gives the local ytdlp-tool host the signed-in Digital Concert Hall access token on request, so downloads can run on this computer. The token is never shown, copied or sent anywhere else.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAurxi8kkuGPxRetolj0Fzsr2BljRk7BAYFrlpez/+qJoixSnjBEAaF0YgqiYc3Z0Q0E+rUlC8uACickjDdY6VD6g8b2+XkRrFovueCHsI8wj/wHM/JcRoMC/6mKfApi6FJH/9O79Ex+DVF7LCR96yt+7BJGmOM/yvngMBIXHZBahma+yzou3djcR7c8tQgF6RNJ9yk/PyTECIhJSGLuWqTDiriRq49CXtnpx8eDr2ScLpsNsHPpkMEBhe/7ASMWvRclrelZjsjDKUjiq7NSPLhWuowKCr8WO6653P4bAmaBsDPu9ppmHzNQy1Qf7b8tXESHFG2ucaI9cfJeLSQ6FiAwIDAQAB",
+  "minimum_chrome_version": "110",
+  "permissions": [
+    "nativeMessaging",
+    "scripting",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://www.digitalconcerthall.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "YTDLP Digital Concert Hall bridge"
+  }
+}

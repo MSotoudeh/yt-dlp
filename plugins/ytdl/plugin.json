@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ytdl",
-  "version": "0.2.8",
-  "description": "Use YTDL on Ops for YouTube transcripts and Instagram, X/Twitter and LinkedIn public posts with original media and separate authored text.",
+  "version": "0.2.9",
+  "description": "Use YTDL on Ops for YouTube transcripts and Instagram, X/Twitter and LinkedIn public posts with original media and separate authored text, plus Digital Concert Hall downloads from the signed-in Brave session.",
   "author": {
     "name": "M. Sotoudeh"
   },
@@ -23,7 +23,8 @@
           "Extract audio from this URL.",
           "Extract this Instagram Reel's written caption or spoken TXT/SRT.",
           "Retrieve the original media and tweet text from this public X/Twitter status URL.",
-          "Retrieve a public LinkedIn post’s photo, video or GIF and its original written caption separately."
+          "Retrieve a public LinkedIn post’s photo, video or GIF and its original written caption separately.",
+          "Download this Digital Concert Hall concert from my signed-in Brave session."
         ]
       }
     }
