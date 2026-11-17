@@ -1,6 +1,8 @@
 """Deliver verified benchmark archive privately, without revealing Telegram credentials."""
 from pathlib import Path
-import requests,sqlite3,zipfile
+import requests
+import sqlite3
+import zipfile
 ROOT=Path(r"C:\ProgramData\ytdlp-bot")
 OUT=ROOT/"asr-six-gpu-20261021"
 FILE=OUT/"Persian-ASR-Six-GPU-Comparison.zip"

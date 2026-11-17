@@ -1,10 +1,7 @@
 """Contract tests for read-only X/Twitter single-post Telegram delivery."""
-import json
 import sqlite3
 import subprocess
 import sys
-from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 

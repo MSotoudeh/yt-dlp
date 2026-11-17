@@ -4,7 +4,6 @@ Only downloads the model with an already authorized Hugging Face token and
 performs *all inference on cuda:0*. Never changes the production Telegram bot.
 """
 import json
-import os
 from pathlib import Path
 import time
 import traceback

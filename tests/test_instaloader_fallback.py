@@ -1,5 +1,4 @@
 from types import SimpleNamespace
-from pathlib import Path
 import pytest
 
 import ytdlp_tool.instagram as ig

@@ -132,7 +132,6 @@ class _EmbeddedPostParser(HTMLParser):
             self._overlay_parts.append(data)
 
     def result(self, post_id: str) -> LinkedInPost:
-        expected = "urn:li:activity:" + post_id
         if not any(u.endswith(":" + post_id) for u in self.urns):
             raise LinkedInError("LinkedIn public post unavailable or activity mismatch")
         text = "".join(self._text_parts).strip()

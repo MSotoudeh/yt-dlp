@@ -7,8 +7,6 @@ adequately sized evaluation sample.
 from __future__ import annotations
 import argparse
 import json
-import re
-import unicodedata
 from pathlib import Path
 
 MODELS=("c1tech-cpu","c1tech-cuda","buzz-cpu-native","buzz-cuda-native","qwen-cpu","qwen-cuda","shenava-koochik-cpu")

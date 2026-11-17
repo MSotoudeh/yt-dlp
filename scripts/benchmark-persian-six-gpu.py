@@ -1,6 +1,11 @@
 """Reproducible Persian ASR GPU-only trials on Ops; no production bot mutations."""
 from __future__ import annotations
-import argparse, gc, json, math, os, subprocess, sys, time, traceback
+import argparse
+import json
+import os
+import subprocess
+import time
+import traceback
 from pathlib import Path
 
 ROOT=Path(r"C:\GitHub\yt-dlp")
@@ -39,7 +44,8 @@ def verify_cuda():
  return torch
 
 def audio_chunks():
- import soundfile as sf,numpy as np
+ import soundfile as sf
+ import numpy as np
  a,sr=sf.read(str(AUDIO),dtype="float32")
  if sr!=16000 or a.ndim!=1:raise ValueError("Expected mono 16k audio")
  chunks=[np.asarray(a[i:i+sr*28],dtype=np.float32) for i in range(0,len(a),sr*28)]
@@ -157,7 +163,8 @@ def run_givia(name,chunks,sr):
 def run_meta(name,chunks,sr):
  try:from omnilingual_asr.models.inference.pipeline import ASRInferencePipeline
  except (ImportError, OSError) as ex:raise RuntimeError("Meta fairseq2/omnilingual-asr native Windows dependency unavailable: "+str(ex)) from ex
- import torch,soundfile as sf
+ import torch  # noqa: F401  (loads CUDA DLLs before other GPU libraries)
+ import soundfile as sf
  pipeline=ASRInferencePipeline(model_card="omniASR_CTC_300M",device="cuda:0")
  lines=[]
  for i,part in enumerate(chunks,1):
@@ -173,7 +180,8 @@ def run_meta(name,chunks,sr):
 def run_nvidia(name,chunks,sr):
  try:import nemo.collections.asr as nemo_asr
  except (ImportError,OSError) as ex:raise RuntimeError("NVIDIA NeMo Windows inference dependency unavailable: "+str(ex)) from ex
- import torch,soundfile as sf
+ import torch  # noqa: F401  (loads CUDA DLLs before other GPU libraries)
+ import soundfile as sf
  model=nemo_asr.models.ASRModel.from_pretrained(MODELS[name]).to("cuda:0")
  if next(model.parameters()).device.type!="cuda":raise RuntimeError("NVIDIA model not on CUDA")
  lines=[]

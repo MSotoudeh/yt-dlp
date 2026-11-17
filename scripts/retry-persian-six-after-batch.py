@@ -1,5 +1,9 @@
 """Final recovery pass after initial serial batch; no overlapping GPU inference."""
-import json,os,subprocess,sys,time,zipfile,shutil,importlib.util
+import json
+import subprocess
+import time
+import zipfile
+import importlib.util
 from pathlib import Path
 ROOT=Path(r"C:\GitHub\yt-dlp")
 OUT=Path(r"C:\ProgramData\ytdlp-bot\asr-six-gpu-20261021")

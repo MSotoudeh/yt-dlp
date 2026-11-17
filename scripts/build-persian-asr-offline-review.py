@@ -3,7 +3,9 @@
 No ASR inference or external API. Reference text remains blank until corrected by a human.
 """
 from __future__ import annotations
-import hashlib, json, zipfile
+import hashlib
+import json
+import zipfile
 from pathlib import Path
 
 ROOT=Path(r"C:\ProgramData\ytdlp-bot")
