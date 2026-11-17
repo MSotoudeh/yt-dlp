@@ -1,7 +1,7 @@
 # yt-dlp automation toolkit
 
 A reusable Python automation layer around upstream [yt-dlp](https://github.com/yt-dlp/yt-dlp).
-Version 0.3 adds optional local Whisper transcription for Instagram, YouTube and local files while keeping all previous commands compatible.
+Version 0.4 adds a Digital Concert Hall downloader (`dch`) and a hardened Telegram bot service (logging, self-recovery); all previous commands stay compatible. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Capabilities
 
@@ -17,7 +17,9 @@ The CLI now exposes these high-value yt-dlp workflows:
 - `playlist` — inspect a playlist or explicitly download it;
 - `clip` — download only a selected time range;
 - `comments` — fetch a bounded number of comments as JSON;
-- `transcribe` — download media audio and generate spoken-text TXT and SRT with Whisper.
+- `transcribe` — download media audio and generate spoken-text TXT and SRT with Whisper;
+- `ig-caption`, `ig-media`, `ig-speech`, `x-post`, `li-post` — public Instagram / X / LinkedIn post text and media (used by the Telegram bot, also usable directly);
+- `dch` — Digital Concert Hall films and concerts with your own short-lived access token ([guide](docs/digital-concert-hall.md)).
 
 Non-subtitle commands accept ordinary HTTP(S) URLs supported by yt-dlp extractors. The current subtitle workflow intentionally remains YouTube-only.
 
@@ -59,6 +61,9 @@ ytdlp-tool playlist URL [options]
 ytdlp-tool clip URL START END [options]
 ytdlp-tool comments URL [options]
 ytdlp-tool transcribe URL_OR_LOCAL_FILE [--lang auto] [--model small] [--video]
+ytdlp-tool ig-caption|ig-media|ig-speech INSTAGRAM_URL [options]
+ytdlp-tool x-post URL | li-post URL [--output-dir DIR]
+ytdlp-tool dch URL [--list] [--item N] [--token-stdin] [--format-selector SEL]
 ```
 
 The equivalent module form is `python -m ytdlp_tool ...`.
@@ -181,13 +186,21 @@ src/ytdlp_tool/
   cli.py          command routing and human/machine-readable output
   downloader.py   subtitle retrieval and output
   media.py        metadata, formats, media, playlist, comments, and clip workflows
-  transcribe.py     Whisper-based transcription
-  subtitles.py    subtitle language selection and VTT conversion
+  transcribe.py   Whisper-based transcription
+  transcript.py   YouTube transcript-first logic
+  subtitles.py    subtitle language selection and VTT/SRT conversion
+  instagram.py, x_twitter.py, linkedin.py   public post text + media
+  dch.py          Digital Concert Hall downloads (token handling, URL validation)
+  telegram_bot.py private Telegram long-polling front-end (see docs/operations.md)
 
-tests/            unit tests
+tests/            unit tests (no network needed)
+scripts/          bot launcher, task installer, one-off Persian ASR benchmark scripts
 output/           generated files (ignored by Git)
+docs/             operations guide, bot reference, Digital Concert Hall guide, ASR reports
 docs/superpowers/ design and implementation notes
 ```
+
+Operations (bot service, logs, recovery, dev checks): [docs/operations.md](docs/operations.md).
 
 ## Verification
 
