@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import sys
 
-from . import dch
+from . import dch, dch_host, dch_jobs
 from .downloader import SubtitleDownloadError, download_subtitle, inspect_video
 from .media import (
     MediaError,
@@ -32,6 +32,7 @@ COMMANDS = {
     "subs", "info", "formats", "video", "audio",
     "thumbnail", "playlist", "clip", "comments", "transcribe", "transcript",
     "ig-caption", "ig-speech", "ig-media", "x-post", "li-post", "dch",
+    "dch-start", "dch-status", "dch-worker",
 }
 
 
@@ -172,8 +173,20 @@ def build_command_parser() -> argparse.ArgumentParser:
     concert.add_argument("--format-selector", default=dch.DEFAULT_FORMAT)
     concert.add_argument("--token-stdin", action="store_true",
                          help="Read the token from the first line of stdin instead of a hidden prompt")
-    concert.add_argument("--output-dir", type=Path, default=Path("output") / "digital-concert-hall",
-                         help="Directory for downloads (default: output/digital-concert-hall)")
+    concert.add_argument("--output-dir", type=Path, default=None,
+                         help="Directory for downloads (default: output/chatgpt/digital-concert-hall)")
+
+    start = sub.add_parser(
+        "dch-start",
+        help="Start a Digital Concert Hall job in the background using the signed-in Brave session",
+    )
+    start.add_argument("url", nargs="?", default=None, help="Page URL; omit to use the single open concert tab")
+    start.add_argument("--list", action="store_true", dest="list_items", help="Only list items and quality")
+    start.add_argument("--item", type=int, default=None)
+    status = sub.add_parser("dch-status", help="Show a background Digital Concert Hall job (or the recent jobs)")
+    status.add_argument("job_id", nargs="?", default=None)
+    worker = sub.add_parser("dch-worker", help=argparse.SUPPRESS)  # internal: token arrives on stdin
+    worker.add_argument("job_dir", type=Path)
     return parser
 
 
@@ -375,12 +388,31 @@ def _run_command(argv: list[str]) -> int:
                                  f"{item.formats} formats", item.title]))
             return 0
         result = dch.download(
-            args.url, token, args.output_dir,
+            args.url, token, args.output_dir or dch_jobs.default_output_dir(),
             item=args.item, format_selector=args.format_selector,
         )
         for path in result.paths:
             print(f"Saved: {path}")
         print(f"Items: {result.items}")
+        return 0
+
+    if args.command == "dch-worker":
+        return dch_jobs.run_worker(args.job_dir)
+
+    if args.command == "dch-start":
+        response = dch_host.bridge_request({
+            "op": "start", "url": args.url,
+            "mode": "list" if args.list_items else "download", "item": args.item,
+        })
+        if not response.get("ok"):
+            raise dch.DchError(response.get("error", "The bridge refused the request"))
+        print(json.dumps({k: v for k, v in response.items() if k != "ok"}, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "dch-status":
+        payload = dch_jobs.read_status(args.job_id) if args.job_id else {"jobs": dch_jobs.list_jobs()}
+        payload.pop("pid", None)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
 
     raise ValueError(f"Unknown command: {args.command}")

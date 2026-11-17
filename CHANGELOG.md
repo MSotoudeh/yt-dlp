@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0 - 2026-11-17
+
+### Added
+- **Digital Concert Hall browser bridge** (plan `tasks/plan.md`, phases 3-5): a Manifest V3 Brave/Chromium extension
+  (`extensions/dch-bridge`, domain-limited), a Native Messaging host (`dch_host`), detached background workers with
+  file-based job state, timeouts and duplicate protection (`dch_jobs`), and CLI `dch-start` / `dch-status`.
+- **MCP server** `ytdlp_tool.dch_mcp` (`dch_start`, `dch_status`, `dch_jobs`; no credentials in or out) and an installer
+  `python -m ytdlp_tool.dch_install install|status|uninstall` that registers the host for Brave and adds the server to
+  Claude Desktop and Codex configs (with backups). YTDL plugin 0.2.9 documents the workflow.
+- `tests/e2e/run_dch_e2e.sh`: real Chromium + real extension + host + worker end-to-end test with a fake site/token.
+- Tests for jobs, host, MCP and installer (245 tests total).
+
+### Changed
+- `dch` output now defaults to `output/chatgpt/digital-concert-hall`; URL validation normalizes trailing slashes.
+
 ## 0.4.0 - 2026-11-17
 
 ### Added

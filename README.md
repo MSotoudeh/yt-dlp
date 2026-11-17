@@ -1,7 +1,7 @@
 # yt-dlp automation toolkit
 
 A reusable Python automation layer around upstream [yt-dlp](https://github.com/yt-dlp/yt-dlp).
-Version 0.4 adds a Digital Concert Hall downloader (`dch`) and a hardened Telegram bot service (logging, self-recovery); all previous commands stay compatible. See [CHANGELOG.md](CHANGELOG.md).
+Version 0.5 adds Digital Concert Hall downloads (manual token or a Brave bridge with MCP tools) and a hardened Telegram bot service (logging, self-recovery); all previous commands stay compatible. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Capabilities
 
@@ -64,6 +64,8 @@ ytdlp-tool transcribe URL_OR_LOCAL_FILE [--lang auto] [--model small] [--video]
 ytdlp-tool ig-caption|ig-media|ig-speech INSTAGRAM_URL [options]
 ytdlp-tool x-post URL | li-post URL [--output-dir DIR]
 ytdlp-tool dch URL [--list] [--item N] [--token-stdin] [--format-selector SEL]
+ytdlp-tool dch-start [URL] [--list] [--item N]     # background job via the signed-in Brave session
+ytdlp-tool dch-status [JOB_ID]
 ```
 
 The equivalent module form is `python -m ytdlp_tool ...`.
@@ -191,6 +193,8 @@ src/ytdlp_tool/
   subtitles.py    subtitle language selection and VTT/SRT conversion
   instagram.py, x_twitter.py, linkedin.py   public post text + media
   dch.py          Digital Concert Hall downloads (token handling, URL validation)
+  dch_jobs.py, dch_host.py, dch_mcp.py, dch_install.py   background jobs, Brave native host, MCP server, installer
+extensions/dch-bridge/  Brave/Chromium extension that hands the site token to the local host
   telegram_bot.py private Telegram long-polling front-end (see docs/operations.md)
 
 tests/            unit tests (no network needed)

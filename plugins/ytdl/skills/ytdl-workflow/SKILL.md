@@ -43,6 +43,11 @@ Map natural-language requests to these commands:
   - default format: `txt`
   - use `--list` when the user asks which subtitle languages exist
 - Instagram Story URLs (`/stories/USERNAME/STORY_ID/`) have no reliably accessible standalone authored caption; overlay text requires OCR of pixels and stories typically require login. The bot recognizes them and explains the limitation rather than running any media processing.
+- Digital Concert Hall (digitalconcerthall.com) films/concerts, signed in as the user in Brave:
+  - Prefer the `ytdlp-dch` MCP tools when they are available: `dch_start` (mode `list` to inspect, `download` to save; omit `url` to use the single open concert tab), then `dch_status`. Otherwise run `dch-start [URL] [--list] [--item N]` and `dch-status [JOB_ID]` through the toolkit.
+  - **Never ask for, accept, print or store an access token, cookie or password.** The Brave extension hands the token to the local worker itself; if the bridge is not running, tell the user to open Brave with the "YTDLP Digital Concert Hall bridge" extension enabled and to sign in.
+  - Downloads run for minutes to hours: after `dch_start` reports a job id, STOP and tell the user the job id and where files will appear. Check `dch_status` exactly once, and only when the user asks. Do not poll or chain follow-ups.
+  - Report `done` only when `dch_status` says `done` with file paths; `failed` errors (DRM, expired token, not signed in) are reported as they are. Never bypass DRM or access limits.
 - LinkedIn public post media and authored text:
   - CLI: li-post URL --output-dir output/chatgpt/linkedin-posts
   - For a bare public LinkedIn post link, the Ops Telegram bot delivers native photos, video, or GIF (or accessible partial album) and then the author's written post commentary as a separate normal text message; no TXT attachment or OCR/ASR.

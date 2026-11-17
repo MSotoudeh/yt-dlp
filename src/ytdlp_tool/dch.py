@@ -71,7 +71,7 @@ def validate_dch_url(url: str) -> str:
             "Expected a page like https://www.digitalconcerthall.com/en/concert/56205 "
             "(film, concert or work)"
         )
-    return f"https://{parts.hostname}{parts.path}"
+    return f"https://{parts.hostname}{parts.path.rstrip('/')}"
 
 
 def token_seconds_left(token: str, now: float | None = None) -> int | None:
@@ -122,7 +122,8 @@ def _extract(url: str, token: str, extra: dict | None, *, download: bool) -> dic
         if "drm" in lowered:
             raise DchError("This stream is DRM-protected and cannot be downloaded: " + message[-200:]) from None
         if any(w in lowered for w in ("token", "401", "login", "expired", "invalid")):
-            raise DchError("Digital Concert Hall rejected the token: " + message[-200:] + " " + TOKEN_HINT) from None
+            hint = "" if "access_token_production" in message else " " + TOKEN_HINT
+            raise DchError("Digital Concert Hall rejected the token: " + message[-300:] + hint) from None
         raise DchError(message[-300:]) from None
     if not info:
         raise DchError("Digital Concert Hall returned no information for this page")

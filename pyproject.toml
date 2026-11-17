@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ytdlp-tool"
-version = "0.4.0"
+version = "0.5.0"
 description = "Reusable yt-dlp automation toolkit"
 requires-python = ">=3.11"
 dependencies = ["yt-dlp>=2026.8.19", "requests>=2.32,<3"]
