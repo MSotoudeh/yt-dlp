@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sys
 
+from . import dch
 from .downloader import SubtitleDownloadError, download_subtitle, inspect_video
 from .media import (
     MediaError,
@@ -30,7 +31,7 @@ from .transcript import get_preferred_transcript
 COMMANDS = {
     "subs", "info", "formats", "video", "audio",
     "thumbnail", "playlist", "clip", "comments", "transcribe", "transcript",
-    "ig-caption", "ig-speech", "ig-media", "x-post", "li-post",
+    "ig-caption", "ig-speech", "ig-media", "x-post", "li-post", "dch",
 }
 
 
@@ -160,7 +161,34 @@ def build_command_parser() -> argparse.ArgumentParser:
     comments = sub.add_parser("comments", help="Fetch comments as JSON")
     comments.add_argument("url")
     comments.add_argument("--limit", type=int, default=100)
+
+    concert = sub.add_parser(
+        "dch", help="Download Digital Concert Hall content with your own short-lived access token",
+    )
+    concert.add_argument("url", help="https://www.digitalconcerthall.com/en/concert/NNNNN (or /film/, /work/)")
+    concert.add_argument("--list", action="store_true", dest="list_items",
+                         help="List items and available quality without downloading")
+    concert.add_argument("--item", type=int, default=None, help="Download only this 1-based item of a concert")
+    concert.add_argument("--format-selector", default=dch.DEFAULT_FORMAT)
+    concert.add_argument("--token-stdin", action="store_true",
+                         help="Read the token from the first line of stdin instead of a hidden prompt")
+    concert.add_argument("--output-dir", type=Path, default=Path("output") / "digital-concert-hall",
+                         help="Directory for downloads (default: output/digital-concert-hall)")
     return parser
+
+
+def _read_dch_token(from_stdin: bool) -> str:
+    """The token never comes from argv or the environment, so it cannot leak via process lists."""
+    if from_stdin:
+        token = sys.stdin.readline().strip()
+    elif sys.stdin.isatty():
+        import getpass
+        token = getpass.getpass("Digital Concert Hall access token (input hidden): ").strip()
+    else:
+        raise dch.DchError("No terminal for the hidden token prompt; pipe the token with --token-stdin")
+    if not token:
+        raise dch.DchError("No access token provided. " + dch.TOKEN_HINT)
+    return token
 
 
 def _display_languages(values: tuple[str, ...]) -> str:
@@ -333,6 +361,28 @@ def _run_command(argv: list[str]) -> int:
         print(json.dumps(list(comments), ensure_ascii=True, indent=2))
         return 0
 
+    if args.command == "dch":
+        dch.validate_dch_url(args.url)
+        token = _read_dch_token(args.token_stdin)
+        left = dch.token_seconds_left(token)
+        if left is not None:
+            print(f"Token valid for about {max(1, left // 60)} more minute(s)")
+        if args.list_items:
+            for item in dch.list_items(args.url, token):
+                quality = f"{item.best_height}p" if item.best_height else "-"
+                length = f"{int(item.duration // 60)} min" if item.duration else "-"
+                print("\t".join([str(item.index), item.video_id, length, quality,
+                                 f"{item.formats} formats", item.title]))
+            return 0
+        result = dch.download(
+            args.url, token, args.output_dir,
+            item=args.item, format_selector=args.format_selector,
+        )
+        for path in result.paths:
+            print(f"Saved: {path}")
+        print(f"Items: {result.items}")
+        return 0
+
     raise ValueError(f"Unknown command: {args.command}")
 
 
@@ -348,6 +398,7 @@ def main(argv: list[str] | None = None) -> int:
         TranscriptionError,
         SubtitleUnavailableError,
         SubtitleDownloadError,
+        dch.DchError,
     ) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
