@@ -1,5 +1,7 @@
-from ytdlp_tool.telegram_bot import parse, ingest, setup, format_keyboard
 import sqlite3
+
+import pytest
+from ytdlp_tool.telegram_bot import parse, ingest, setup, format_keyboard
 
 
 def test_parse():
@@ -428,3 +430,75 @@ def test_polling_survives_transient_network_errors(monkeypatch, tmp_path):
         telegram_bot.main()
     assert calls["api"] == 2
     assert sleeps == [2]
+
+
+def test_failure_notice_is_generic_unless_cause_is_known():
+    from ytdlp_tool.telegram_bot import failure_notice
+
+    assert failure_notice("audio", RuntimeError("anything /secret/path")) == "Job failed. Contact operator."
+    assert "rate-limited" in failure_notice("transcript", RuntimeError("HTTP Error 429"))
+    assert "timed out" in failure_notice("transcript", RuntimeError("Timeout expired"))
+    assert "denied" in failure_notice("ig_txt", RuntimeError("login required"))
+    assert "no accessible written caption" in failure_notice("ig_caption", RuntimeError("caption is absent"))
+    assert "No recognizable" in failure_notice("ig_srt", RuntimeError("No speech detected"))
+    # a Telegram-visible notice never echoes the raw exception text
+    assert "secret" not in failure_notice("ig_caption", RuntimeError("secret 403"))
+
+
+def test_wildcard_allowlist_requires_explicit_opt_in(monkeypatch):
+    import pytest
+    from ytdlp_tool.telegram_bot import load_allowlist
+
+    monkeypatch.delenv("YTDL_ALLOW_PUBLIC_BOT", raising=False)
+    monkeypatch.setenv("YTDL_ALLOWED_CHAT_IDS", "*")
+    with pytest.raises(SystemExit):
+        load_allowlist()
+    monkeypatch.setenv("YTDL_ALLOW_PUBLIC_BOT", "1")
+    assert load_allowlist() == {"*"}
+    monkeypatch.setenv("YTDL_ALLOWED_CHAT_IDS", " 1, 2 ,")
+    assert load_allowlist() == {"1", "2"}
+    monkeypatch.setenv("YTDL_ALLOWED_CHAT_IDS", "")
+    with pytest.raises(SystemExit):
+        load_allowlist()
+
+
+def test_static_replies_do_not_start_subprocesses(monkeypatch):
+    from ytdlp_tool import telegram_bot as bot
+
+    sent = []
+    monkeypatch.setattr(bot, "send", lambda token, chat, text, **kw: sent.append(text))
+    monkeypatch.setattr(bot.subprocess, "run", lambda *a, **kw: (_ for _ in ()).throw(AssertionError("no subprocess")))
+    ctx = bot.JobContext(token="t", db=None, root=None, python="py", model_dir="m")
+    for mode in ("help", "invalid", "ig_story"):
+        assert bot.dispatch_job(ctx, 1, 1, mode, "") is None
+    assert len(sent) == 3
+
+
+def test_run_logs_why_the_bot_stopped(monkeypatch, tmp_path):
+    from ytdlp_tool import telegram_bot as bot
+
+    log = tmp_path / "bot.log"
+    monkeypatch.setattr(bot, "_LOG_FILE", str(log))
+
+    def boom():
+        raise ValueError("disk exploded")
+
+    monkeypatch.setattr(bot, "main", boom)
+    with pytest.raises(SystemExit) as stopped:
+        bot.run()
+    assert stopped.value.code == 1
+    text = log.read_text(encoding="utf-8")
+    assert "bot crashed" in text and "disk exploded" in text
+
+    monkeypatch.setattr(bot, "main", lambda: (_ for _ in ()).throw(KeyboardInterrupt()))
+    with pytest.raises(SystemExit) as stopped:
+        bot.run()
+    assert stopped.value.code == 130
+    assert "interrupted" in log.read_text(encoding="utf-8")
+
+
+def test_log_file_failure_never_stops_the_bot(monkeypatch, tmp_path):
+    from ytdlp_tool import telegram_bot as bot
+
+    monkeypatch.setattr(bot, "_LOG_FILE", str(tmp_path / "missing-dir" / "bot.log"))
+    bot._log("still fine")  # must not raise

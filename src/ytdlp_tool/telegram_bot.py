@@ -1,5 +1,15 @@
 from __future__ import annotations
-import argparse, json, os, sqlite3, subprocess, sys, time
+import argparse
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import sys
+import time
+import traceback
+import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
@@ -58,7 +68,6 @@ def parse(text):
                 except ValueError:
                     return None
             if u.hostname in INSTAGRAM_HOSTS:
-                import re
                 is_story = bool(re.fullmatch(
                     r"/stories/[A-Za-z0-9._]+/[0-9]+/?", u.path
                 ))
@@ -122,7 +131,6 @@ def upload(token, chat, path):
     if path.stat().st_size > 49 * 1024 * 1024:
         send(token, chat, "Output exceeds Telegram direct upload limit (50 MB): " + path.name)
         return
-    import uuid
     boundary = "ytdlp_" + uuid.uuid4().hex
     prefix = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n{chat}\r\n"
               f"--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; filename=\"{path.name}\"\r\n"
@@ -139,8 +147,6 @@ def upload(token, chat, path):
 
 def send_instagram_media(token, chat, paths):
     """Send original media as native Telegram photo/video or album, never as document."""
-    import uuid
-
     paths = tuple(Path(p) for p in paths)
     if not paths:
         raise ValueError("No Instagram media to send")
@@ -150,7 +156,7 @@ def send_instagram_media(token, chat, paths):
     for start in range(0, len(paths), 10):
         batch = paths[start:start + 10]
         items = []
-        for n, path in enumerate(batch):
+        for path in batch:
             kind = types.get(path.suffix.lower())
             if not kind:
                 raise ValueError(f"Unsupported Telegram photo/video format: {path.suffix}")
@@ -163,7 +169,7 @@ def send_instagram_media(token, chat, paths):
         boundary = "ig_" + uuid.uuid4().hex
         chunks = []
 
-        def field(name, value):
+        def field(name, value, boundary=boundary):
             return (
                 f"--{boundary}\r\n"
                 f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
@@ -233,7 +239,6 @@ def setup(db):
 
 def ingest_callback(db, item):
     """Queue exactly one format selection for the original requesting user."""
-    import re
     callback = item.get("callback_query") or {}
     uid = item["update_id"]
     chat = (callback.get("message") or {}).get("chat") or {}
@@ -285,11 +290,11 @@ def ingest(db, item):
     uid = item["update_id"]
     msg = item.get("message") or {}
     chat = (msg.get("chat") or {}).get("id")
-    if chat is None: return
+    if chat is None:
+        return
     raw = msg.get("text", "")
     parsed = parse(raw)
     if parsed is None:
-        import re
         candidate = re.search(r'https://(?:(?:www|mobile|[a-z]{2,3})\.)?(?:youtu\.be|youtube\.com|vimeo\.com|instagram\.com|x\.com|twitter\.com|linkedin\.com)/[^\s<>]+', raw, re.I)
         if candidate:
             parsed = parse(candidate.group(0))
@@ -306,269 +311,382 @@ def ingest(db, item):
             )
     db.commit()
 
+
+# --------------------------------------------------------------------------- #
+# Job processing
+# --------------------------------------------------------------------------- #
+
+NATIVE_MEDIA_EXTS = {".jpg", ".jpeg", ".png", ".mp4", ".gif"}
+X_MEDIA_EXTS = {".jpg", ".jpeg", ".png", ".mp4"}
+INSTAGRAM_MEDIA_EXTS = {".jpg", ".jpeg", ".png", ".mp4", ".mov", ".webm"}
+
+HELP_TEXT = (
+    "Paste a public Instagram, X/Twitter or LinkedIn post URL for native photo/video followed by "
+    "authored text in a separate message (no TXT attachment). For speech use /igtxt URL or /igsrt URL; "
+    "optional menu: /ig_choose URL. YouTube: TXT or SRT choice. Instagram Stories often have overlay "
+    "text requiring OCR and login."
+)
+INVALID_TEXT = (
+    "Unsupported link. Send an Instagram post/Reel, X/Twitter status, LinkedIn public post or YouTube link."
+)
+STORY_TEXT = (
+    "Instagram Story: there is generally no separate written post caption to retrieve from public "
+    "metadata. Text displayed on a Story is embedded in its image/video, requiring OCR; Stories commonly "
+    "require login. No audio, video or OCR was processed."
+)
+
+
+_LOG_FILE = None
+
+
+def _log(message):
+    """Timestamped log line to stderr (and --log-file). Never pass tokens or message bodies to it."""
+    line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}"
+    print(line, file=sys.stderr, flush=True)
+    if _LOG_FILE is not None:
+        try:
+            with open(_LOG_FILE, "a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+        except OSError:
+            pass  # logging must never take the bot down
+
+
+@dataclass
+class JobContext:
+    """Everything a job handler needs; keeps handlers free of module-level state."""
+    token: str
+    db: sqlite3.Connection
+    root: Path
+    python: str
+    model_dir: str
+
+
+def _run_cli(cmd, timeout):
+    """Run one ytdlp_tool sub-command with UTF-8 output captured."""
+    return subprocess.run(
+        cmd, capture_output=True, text=True, timeout=timeout,
+        encoding="utf-8", errors="replace",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+
+
+def _job_folder(ctx, uid):
+    folder = ctx.root / "downloads" / str(uid)
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _media_files(folder, extensions):
+    return sorted(
+        (p for p in folder.rglob("*") if p.is_file() and p.suffix.lower() in extensions),
+        key=str,
+    )
+
+
+def _warnings(proc):
+    """Collect 'Warning: ...' lines a ytdlp_tool sub-command printed on stdout."""
+    return [line[9:].strip() for line in proc.stdout.splitlines() if line.startswith("Warning: ")]
+
+
+def _handle_li_post(ctx, uid, chat, url):
+    folder = _job_folder(ctx, uid)
+    proc = _run_cli([ctx.python, "-m", "ytdlp_tool", "li-post", url, "--output-dir", str(folder)], 240)
+    if proc.returncode:
+        raise RuntimeError("LinkedIn post unavailable: " + (proc.stderr or "retrieval failed")[-240:])
+    text_files = list(folder.glob("linkedin-*.txt"))
+    if len(text_files) != 1:
+        raise RuntimeError("LinkedIn post text result missing")
+    failure = None
+    media_paths = _media_files(folder, NATIVE_MEDIA_EXTS)
+    if media_paths:
+        try:
+            send_native_media(ctx.token, chat, media_paths)
+        except Exception as exc:
+            failure = "LinkedIn media delivery failed: " + str(exc)[-210:]
+            send(ctx.token, chat, "LinkedIn media could not be delivered: " + str(exc)[-180:])
+    warnings = _warnings(proc)
+    if warnings:
+        send(ctx.token, chat, "Some LinkedIn media unavailable or hidden: " + "; ".join(warnings)[-450:])
+    authored = text_files[0].read_text(encoding="utf-8").strip()
+    if authored:
+        send_caption_text(ctx.token, chat, authored)
+    elif media_paths:
+        send(ctx.token, chat, "This LinkedIn post has no accessible written text.")
+    else:
+        raise RuntimeError("LinkedIn post contains neither accessible text nor media")
+    return failure
+
+
+def _handle_x_post(ctx, uid, chat, url):
+    folder = _job_folder(ctx, uid)
+    proc = _run_cli([ctx.python, "-m", "ytdlp_tool", "x-post", url, "--output-dir", str(folder)], 180)
+    if proc.returncode:
+        raise RuntimeError("X post unavailable: " + (proc.stderr or "retrieval failed")[-250:])
+    text_files = list(folder.glob("tweet-*.txt"))
+    if len(text_files) != 1:
+        raise RuntimeError("X post text result missing")
+    media_paths = _media_files(folder, X_MEDIA_EXTS)
+    if media_paths:
+        try:
+            send_native_media(ctx.token, chat, media_paths)
+        except Exception as exc:
+            send(ctx.token, chat, "X media could not be delivered: " + str(exc)[-180:])
+    warnings = _warnings(proc)
+    if warnings:
+        send(ctx.token, chat, "Some X media unavailable: " + "; ".join(warnings)[-300:])
+    written = text_files[0].read_text(encoding="utf-8").strip()
+    if written:
+        send_caption_text(ctx.token, chat, written)
+    elif media_paths:
+        send(ctx.token, chat, "This X post has no authored text.")
+    else:
+        raise RuntimeError("X post contains neither accessible text nor media")
+    return None
+
+
+def _handle_ig_caption(ctx, uid, chat, url):
+    """A bare Instagram link yields two separate Telegram deliveries: native media, then caption text.
+
+    The intermediate TXT stays on Ops; it is never uploaded.
+    """
+    folder = _job_folder(ctx, uid)
+    base = [ctx.python, "-m", "ytdlp_tool"]
+    caption_proc = _run_cli(base + ["ig-caption", url, "--output-dir", str(folder)], 180)
+    caption_paths = list(folder.glob("instagram-*-caption.txt"))
+    written = (
+        caption_paths[0].read_text(encoding="utf-8").strip()
+        if caption_proc.returncode == 0 and len(caption_paths) == 1
+        else ""
+    )
+    media_proc = _run_cli(base + ["ig-media", url, "--output-dir", str(folder)], 180)
+    media_paths = _media_files(folder, INSTAGRAM_MEDIA_EXTS)
+    media_error = None
+    try:
+        if media_proc.returncode:
+            raise RuntimeError((media_proc.stderr or "media not accessible")[-220:])
+        send_instagram_media(ctx.token, chat, media_paths)
+    except Exception as media_exc:
+        media_error = str(media_exc)[-230:]
+        send(ctx.token, chat, "Instagram media unavailable: " + media_error)
+    if written:
+        send_caption_text(ctx.token, chat, written)
+        return None
+    detail = (caption_proc.stderr or "no written caption available")[-220:]
+    send(ctx.token, chat, "Instagram written caption unavailable: " + detail)
+    if media_error is not None:
+        return ("Instagram media and written caption unavailable: " + media_error + "; caption: " + detail)[:300]
+    return None
+
+
+def _handle_choose(ctx, uid, chat, mode):
+    choice = ctx.db.execute(
+        "SELECT requester FROM format_choices WHERE request_id=? AND chat=?", (uid, chat),
+    ).fetchone()
+    if not choice:
+        raise RuntimeError("Format selection requires an identified sender")
+    if mode == "ig_choose":
+        send(ctx.token, chat, "Instagram: choose post caption or spoken transcript format:",
+             keyboard=format_keyboard(uid, "instagram"))
+    else:
+        send(ctx.token, chat, "Choose original-language transcript format:", keyboard=format_keyboard(uid))
+    return None
+
+
+def _handle_download(ctx, uid, chat, mode, url):
+    """audio / video / subs / transcribe / transcript / txt / srt / ig_txt / ig_srt."""
+    send(ctx.token, chat, "Job accepted: " + str(uid))
+    folder = _job_folder(ctx, uid)
+    command_mode = {
+        "txt": "transcript", "srt": "transcript",
+        "ig_txt": "ig-speech", "ig_srt": "ig-speech",
+    }.get(mode, mode)
+    cmd = [ctx.python, "-m", "ytdlp_tool", command_mode, url, "--output-dir", str(folder)]
+    if command_mode in ("transcribe", "transcript", "ig-speech"):
+        cmd += ["--model", "large-v3", "--model-dir", ctx.model_dir]
+    if mode in ("txt", "srt", "ig_txt", "ig_srt"):
+        cmd += ["--format", "srt" if mode.endswith("srt") else "txt"]
+    proc = _run_cli(cmd, 3600)
+    if proc.returncode:
+        raise RuntimeError((proc.stderr or "processing failed")[-300:])
+    names = [p for p in folder.rglob("*") if p.is_file()]
+    if command_mode in ("transcribe", "transcript", "ig-speech"):
+        names = [p for p in names if p.suffix in (".srt", ".txt")]
+    if mode in ("txt", "srt", "ig_txt", "ig_srt"):
+        selected_ext = "srt" if mode.endswith("srt") else "txt"
+        names = [p for p in names if p.suffix == "." + selected_ext]
+    if not names:
+        raise RuntimeError("No output files produced")
+    for path in names[:4]:
+        upload(ctx.token, chat, path)
+    source = next((line[8:].strip() for line in proc.stdout.splitlines() if line.startswith("Source: ")), None)
+    send(ctx.token, chat, "Completed job " + str(uid) + (("; source=" + source) if source else ""))
+    return None
+
+
+def dispatch_job(ctx, uid, chat, mode, url):
+    """Run one job. Returns a failure description for a partially failed job, else None."""
+    if mode == "help":
+        send(ctx.token, chat, HELP_TEXT)
+    elif mode == "invalid":
+        send(ctx.token, chat, INVALID_TEXT)
+    elif mode == "ig_story":
+        send(ctx.token, chat, STORY_TEXT)
+    elif mode == "li_post":
+        return _handle_li_post(ctx, uid, chat, url)
+    elif mode == "x_post":
+        return _handle_x_post(ctx, uid, chat, url)
+    elif mode == "ig_caption":
+        return _handle_ig_caption(ctx, uid, chat, url)
+    elif mode in {"choose", "ig_choose"}:
+        return _handle_choose(ctx, uid, chat, mode)
+    else:
+        return _handle_download(ctx, uid, chat, mode, url)
+    return None
+
+
+def failure_notice(mode, exc):
+    """User-facing text for a failed job. Deliberately generic: details stay in the job row and log."""
+    detail = str(exc).lower()
+    if mode == "transcript":
+        if "timed out" in detail or "timeout" in detail:
+            return "YouTube transcript download timed out. Captions may exist; ASR was not run."
+        if "403" in detail or "429" in detail or "forbidden" in detail:
+            return "YouTube captions were blocked or rate-limited. ASR was not run."
+    elif mode in {"ig_caption", "ig_txt", "ig_srt"}:
+        if any(term in detail for term in ("403", "429", "login", "private", "rate-limit", "forbidden")):
+            return ("Instagram access denied or rate-limited. This bot supports only accessible public "
+                    "posts, without bypassing login.")
+        if "caption is absent" in detail:
+            return "This Instagram post has no accessible written caption."
+        if "no speech detected" in detail:
+            return "No recognizable spoken audio in this Instagram video."
+        if "timed out" in detail:
+            return "Instagram retrieval or speech recognition timed out."
+    return "Job failed. Contact operator."
+
+
+def process_job(ctx, job):
+    uid, chat, mode, url = job
+    _log(f"job {uid} mode={mode} started")
+    try:
+        failure = dispatch_job(ctx, uid, chat, mode, url)
+        ctx.db.execute(
+            "UPDATE jobs SET state=?,error=? WHERE update_id=?",
+            ("failed" if failure else "done", failure, uid),
+        )
+        _log(f"job {uid} mode={mode} {'failed: ' + failure if failure else 'done'}")
+    except Exception as exc:
+        ctx.db.execute("UPDATE jobs SET state='failed',error=? WHERE update_id=?", (str(exc)[:300], uid))
+        _log(f"job {uid} mode={mode} failed: {str(exc)[:300]}")
+        try:
+            send(ctx.token, chat, failure_notice(mode, exc))
+        except Exception as send_exc:
+            _log(f"job {uid}: could not notify chat ({type(send_exc).__name__})")
+    ctx.db.commit()
+
+
+# --------------------------------------------------------------------------- #
+# Polling loop
+# --------------------------------------------------------------------------- #
+
+def _ingest_updates(token, db, allowed, updates):
+    for update in updates:
+        payload = update.get("message") or (update.get("callback_query") or {}).get("message") or {}
+        chat_id = str((payload.get("chat") or {}).get("id", ""))
+        if chat_id in allowed or "*" in allowed:
+            response = ingest(db, update)
+            if update.get("callback_query"):
+                try:
+                    api(token, "answerCallbackQuery", {
+                        "callback_query_id": update["callback_query"]["id"],
+                        "text": response or "Format selected.",
+                    })
+                except Exception as exc:
+                    _log(f"answerCallbackQuery failed ({type(exc).__name__})")
+        else:
+            # Record rejected IDs so the polling offset advances without allowing work.
+            db.execute("INSERT OR IGNORE INTO jobs(update_id,chat,mode,url,state) VALUES (?,?,?,?,?)",
+                       (update["update_id"], 0, "rejected", "", "done"))
+            db.commit()
+
+
+def load_allowlist():
+    """Chat IDs allowed to use the bot; a wildcard needs an explicit opt-in."""
+    allowed = {x.strip() for x in os.environ.get("YTDL_ALLOWED_CHAT_IDS", "").split(",") if x.strip()}
+    if not allowed:
+        raise SystemExit("YTDL_ALLOWED_CHAT_IDS is required; public execution disabled")
+    if "*" in allowed and os.environ.get("YTDL_ALLOW_PUBLIC_BOT") != "1":
+        raise SystemExit(
+            "YTDL_ALLOWED_CHAT_IDS='*' would let anyone run downloads on this machine. "
+            "Set YTDL_ALLOW_PUBLIC_BOT=1 to confirm that this is intended."
+        )
+    return allowed
+
+
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description="Private Telegram front-end for ytdlp-tool")
     ap.add_argument("--python", default=sys.executable)
     ap.add_argument("--model-dir", required=True)
-    ap.add_argument("--root", default=str(Path.home()/".ytdlp-telegram"))
-    ap.add_argument("--once", action="store_true")
+    ap.add_argument("--root", default=str(Path.home() / ".ytdlp-telegram"))
+    ap.add_argument("--once", action="store_true", help="process at most one polling/job step, then exit")
+    ap.add_argument("--log-file", default=None, help="also append log lines to this file")
     args = ap.parse_args()
+    global _LOG_FILE
+    _LOG_FILE = args.log_file
     token = os.environ.get("YTDL_TELEGRAM_BOT_TOKEN")
-    if not token: ap.error("YTDL_TELEGRAM_BOT_TOKEN is required")
-    allowed = {x.strip() for x in os.environ.get("YTDL_ALLOWED_CHAT_IDS", "").split(",") if x.strip()}
-    if not allowed: ap.error("YTDL_ALLOWED_CHAT_IDS is required; public execution disabled")
+    if not token:
+        ap.error("YTDL_TELEGRAM_BOT_TOKEN is required")
+    allowed = load_allowlist()
     root = Path(args.root)
     root.mkdir(parents=True, exist_ok=True)
     poll_failures = 0
-    with sqlite3.connect(root/"jobs.sqlite") as db:
+    _log("bot starting")
+    with sqlite3.connect(root / "jobs.sqlite") as db:
         setup(db)
+        ctx = JobContext(token=token, db=db, root=root, python=args.python, model_dir=args.model_dir)
         while True:
-            job = db.execute("SELECT update_id,chat,mode,url FROM jobs WHERE state='pending' ORDER BY update_id LIMIT 1").fetchone()
-            if not job:
+            job = db.execute(
+                "SELECT update_id,chat,mode,url FROM jobs WHERE state='pending' ORDER BY update_id LIMIT 1"
+            ).fetchone()
+            if job:
+                process_job(ctx, job)
+            else:
                 offset = db.execute("SELECT COALESCE(MAX(update_id),0)+1 FROM jobs").fetchone()[0]
                 try:
-                    updates = api(token, "getUpdates", {"offset": offset, "timeout": 20, "allowed_updates": '["message","callback_query"]'})
+                    updates = api(token, "getUpdates", {
+                        "offset": offset, "timeout": 20, "allowed_updates": '["message","callback_query"]',
+                    })
+                    if poll_failures:
+                        _log(f"getUpdates recovered after {poll_failures} failure(s)")
                     poll_failures = 0
-                except (OSError, ValueError, RuntimeError):
-                    # Transient network/Telegram errors must not kill the bot: the scheduled task
-                    # only restarts it 3 times, so back off and retry in-process instead.
-                    # (urllib errors never include the bot token in their text, but we log only the type.)
+                except (OSError, ValueError, RuntimeError) as exc:
+                    # Transient network/Telegram errors must not kill the bot: the scheduled task only
+                    # restarts it a few times, so back off and retry in-process instead. Only the
+                    # exception type is logged; urllib messages are not guaranteed token-free.
                     poll_failures += 1
-                    print("getUpdates failed (attempt %d); retrying" % poll_failures, file=sys.stderr, flush=True)
+                    _log(f"getUpdates failed ({type(exc).__name__}, attempt {poll_failures}); retrying")
                     if args.once:
                         raise
                     time.sleep(min(60, 2 ** min(poll_failures, 6)))
                     continue
-                for update in updates:
-                    payload = update.get("message") or (update.get("callback_query") or {}).get("message") or {}
-                    chat_id = str((payload.get("chat") or {}).get("id", ""))
-                    if chat_id in allowed or "*" in allowed:
-                        response = ingest(db, update)
-                        if update.get("callback_query"):
-                            try:
-                                api(token, "answerCallbackQuery", {
-                                    "callback_query_id": update["callback_query"]["id"],
-                                    "text": response or "Format selected.",
-                                })
-                            except Exception:
-                                pass
-                    else:
-                        # Record rejected IDs so polling offset advances without allowing work.
-                        db.execute("INSERT OR IGNORE INTO jobs(update_id,chat,mode,url,state) VALUES (?,?,?,?,?)",
-                                   (update["update_id"], 0, "rejected", "", "done"))
-                        db.commit()
-            else:
-                uid, chat, mode, url = job
-                try:
-                    job_failure = None
-                    if mode == "help":
-                        send(token, chat, "Paste a public Instagram, X/Twitter or LinkedIn post URL for native photo/video followed by authored text in a separate message (no TXT attachment). For speech use /igtxt URL or /igsrt URL; optional menu: /ig_choose URL. YouTube: TXT or SRT choice. Instagram Stories often have overlay text requiring OCR and login.")
-                    elif mode == "invalid":
-                        send(token, chat, "Unsupported link. Send an Instagram post/Reel, X/Twitter status, LinkedIn public post or YouTube link.")
-                    elif mode == "ig_story":
-                        send(token, chat, "Instagram Story: there is generally no separate written post caption to retrieve from public metadata. Text displayed on a Story is embedded in its image/video, requiring OCR; Stories commonly require login. No audio, video or OCR was processed.")
-                    elif mode == "li_post":
-                        folder = root/"downloads"/str(uid)
-                        folder.mkdir(parents=True, exist_ok=True)
-                        cmd = [args.python, "-m", "ytdlp_tool", "li-post", url,
-                               "--output-dir", str(folder)]
-                        proc = subprocess.run(
-                            cmd, capture_output=True, text=True, timeout=240,
-                            encoding="utf-8", errors="replace",
-                            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-                        )
-                        if proc.returncode:
-                            raise RuntimeError("LinkedIn post unavailable: " + (proc.stderr or "retrieval failed")[-240:])
-                        text_files = list(folder.glob("linkedin-*.txt"))
-                        if len(text_files) != 1:
-                            raise RuntimeError("LinkedIn post text result missing")
-                        media_paths = sorted(
-                            (p for p in folder.rglob("*") if p.is_file()
-                             and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".mp4", ".gif"}),
-                            key=lambda p: str(p)
-                        )
-                        if media_paths:
-                            try:
-                                send_native_media(token, chat, media_paths)
-                            except Exception as exc:
-                                job_failure = "LinkedIn media delivery failed: " + str(exc)[-210:]
-                                send(token, chat, "LinkedIn media could not be delivered: " + str(exc)[-180:])
-                        warnings = [line[9:].strip() for line in proc.stdout.splitlines()
-                                    if line.startswith("Warning: ")]
-                        if warnings:
-                            send(token, chat, "Some LinkedIn media unavailable or hidden: " + "; ".join(warnings)[-450:])
-                        authored = text_files[0].read_text(encoding="utf-8").strip()
-                        if authored:
-                            send_caption_text(token, chat, authored)
-                        elif media_paths:
-                            send(token, chat, "This LinkedIn post has no accessible written text.")
-                        else:
-                            raise RuntimeError("LinkedIn post contains neither accessible text nor media")
-                    elif mode == "x_post":
-                        folder = root/"downloads"/str(uid)
-                        folder.mkdir(parents=True, exist_ok=True)
-                        command = [args.python, "-m", "ytdlp_tool", "x-post", url,
-                                   "--output-dir", str(folder)]
-                        proc = subprocess.run(
-                            command, capture_output=True, text=True, timeout=180,
-                            encoding="utf-8", errors="replace",
-                            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-                        )
-                        if proc.returncode:
-                            raise RuntimeError("X post unavailable: " + (proc.stderr or "retrieval failed")[-250:])
-                        text_files = list(folder.glob("tweet-*.txt"))
-                        if len(text_files) != 1:
-                            raise RuntimeError("X post text result missing")
-                        media_paths = sorted(
-                            (p for p in folder.rglob("*") if p.is_file()
-                             and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".mp4"}),
-                            key=lambda p: str(p),
-                        )
-                        if media_paths:
-                            try:
-                                send_native_media(token, chat, media_paths)
-                            except Exception as exc:
-                                send(token, chat, "X media could not be delivered: " + str(exc)[-180:])
-                        warnings = [line[9:].strip() for line in proc.stdout.splitlines()
-                                    if line.startswith("Warning: ")]
-                        if warnings:
-                            send(token, chat, "Some X media unavailable: " + "; ".join(warnings)[-300:])
-                        written = text_files[0].read_text(encoding="utf-8").strip()
-                        if written:
-                            send_caption_text(token, chat, written)
-                        elif media_paths:
-                            send(token, chat, "This X post has no authored text.")
-                        else:
-                            raise RuntimeError("X post contains neither accessible text nor media")
-                    elif mode == "ig_caption":
-                        # A bare Instagram link produces two separate Telegram
-                        # deliveries: native media and ordinary caption text.
-                        # Intermediate TXT remains Ops-local; never upload it.
-                        folder = root/"downloads"/str(uid)
-                        folder.mkdir(parents=True, exist_ok=True)
-                        base = [args.python, "-m", "ytdlp_tool"]
-                        run_args = {
-                            "capture_output": True, "text": True, "timeout": 180,
-                            "encoding": "utf-8", "errors": "replace",
-                            "env": {**os.environ, "PYTHONIOENCODING": "utf-8"},
-                        }
-                        caption_proc = subprocess.run(
-                            base + ["ig-caption", url, "--output-dir", str(folder)],
-                            **run_args,
-                        )
-                        caption_paths = list(folder.glob("instagram-*-caption.txt"))
-                        written = (
-                            caption_paths[0].read_text(encoding="utf-8").strip()
-                            if caption_proc.returncode == 0 and len(caption_paths) == 1
-                            else ""
-                        )
-                        media_proc = subprocess.run(
-                            base + ["ig-media", url, "--output-dir", str(folder)],
-                            **run_args,
-                        )
-                        media_paths = sorted(
-                            (p for p in folder.rglob("*")
-                             if p.is_file() and p.suffix.lower() in
-                             {".jpg", ".jpeg", ".png", ".mp4", ".mov", ".webm"}),
-                            key=lambda p: str(p),
-                        )
-                        media_error = None
-                        try:
-                            if media_proc.returncode:
-                                detail = (media_proc.stderr or "media not accessible")[-220:]
-                                raise RuntimeError(detail)
-                            send_instagram_media(token, chat, media_paths)
-                        except Exception as media_exc:
-                            media_error = str(media_exc)[-230:]
-                            send(token, chat, "Instagram media unavailable: " + media_error)
-                        if written:
-                            send_caption_text(token, chat, written)
-                        else:
-                            detail = (caption_proc.stderr or "no written caption available")[-220:]
-                            send(token, chat, "Instagram written caption unavailable: " + detail)
-                            if media_error is not None:
-                                job_failure = (
-                                    "Instagram media and written caption unavailable: " +
-                                    media_error + "; caption: " + detail
-                                )[:300]
-                    elif mode in {"choose", "ig_choose"}:
-                        choice = db.execute(
-                            "SELECT requester FROM format_choices WHERE request_id=? AND chat=?",
-                            (uid, chat),
-                        ).fetchone()
-                        if not choice:
-                            raise RuntimeError("Format selection requires an identified sender")
-                        if mode == "ig_choose":
-                            send(token, chat, "Instagram: choose post caption or spoken transcript format:",
-                                 keyboard=format_keyboard(uid, "instagram"))
-                        else:
-                            send(token, chat, "Choose original-language transcript format:",
-                                 keyboard=format_keyboard(uid))
-                    else:
-                        if mode != "ig_caption":
-                            send(token, chat, "Job accepted: " + str(uid))
-                        folder = root/"downloads"/str(uid)
-                        folder.mkdir(parents=True, exist_ok=True)
-                        command_mode = {
-                            "txt": "transcript", "srt": "transcript",
-                            "ig_caption": "ig-caption",
-                            "ig_txt": "ig-speech", "ig_srt": "ig-speech",
-                        }.get(mode, mode)
-                        cmd = [args.python, "-m", "ytdlp_tool", command_mode, url,
-                               "--output-dir", str(folder)]
-                        if command_mode in ("transcribe", "transcript", "ig-speech"):
-                            cmd += ["--model", "large-v3", "--model-dir", args.model_dir]
-                        if mode in ("txt", "srt", "ig_txt", "ig_srt"):
-                            cmd += ["--format", "srt" if mode.endswith("srt") else "txt"]
-                        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, encoding="utf-8", errors="replace", env={**os.environ, "PYTHONIOENCODING": "utf-8"})
-                        if proc.returncode: raise RuntimeError((proc.stderr or "processing failed")[-300:])
-                        names = [p for p in folder.rglob("*") if p.is_file()]
-                        if command_mode in ("transcribe", "transcript", "ig-caption", "ig-speech"):
-                            names = [p for p in names if p.suffix in (".srt", ".txt")]
-                        if mode in ("txt", "srt", "ig_caption", "ig_txt", "ig_srt"):
-                            selected_ext = "srt" if mode.endswith("srt") else "txt"
-                            names = [p for p in names if p.suffix == "." + selected_ext]
-                        if not names: raise RuntimeError("No output files produced")
-                        if mode == "ig_caption":
-                            if len(names) != 1:
-                                raise RuntimeError("Expected exactly one caption text file")
-                            caption_text = names[0].read_text(encoding="utf-8").strip()
-                            if not caption_text:
-                                raise RuntimeError("Instagram caption is empty")
-                            send_caption_text(token, chat, caption_text)
-                        for path in names[:4]:
-                            upload(token, chat, path)
-                        source = next((line[8:].strip() for line in proc.stdout.splitlines() if line.startswith("Source: ")), None)
-                        source_label = ("; source=" + source) if source else ""
-                        if mode != "ig_caption":
-                            send(token, chat, "Completed job " + str(uid) + source_label)
-                    db.execute(
-                        "UPDATE jobs SET state=?,error=? WHERE update_id=?",
-                        ("failed" if job_failure else "done", job_failure, uid),
-                    )
-                except Exception as exc:
-                    db.execute("UPDATE jobs SET state='failed',error=? WHERE update_id=?", (str(exc)[:300],uid))
-                    notice = "Job failed. Contact operator."
-                    if mode == "transcript":
-                        detail = str(exc).lower()
-                        if "timed out" in detail or "timeout" in detail:
-                            notice = "YouTube transcript download timed out. Captions may exist; ASR was not run."
-                        elif "403" in detail or "429" in detail or "forbidden" in detail:
-                            notice = "YouTube captions were blocked or rate-limited. ASR was not run."
-                    elif mode in {"ig_caption", "ig_txt", "ig_srt"}:
-                        detail = str(exc).lower()
-                        if any(term in detail for term in ("403", "429", "login", "private", "rate-limit", "forbidden")):
-                            notice = "Instagram access denied or rate-limited. This bot supports only accessible public posts, without bypassing login."
-                        elif "caption is absent" in detail:
-                            notice = "This Instagram post has no accessible written caption."
-                        elif "no speech detected" in detail:
-                            notice = "No recognizable spoken audio in this Instagram video."
-                        elif "timed out" in detail:
-                            notice = "Instagram retrieval or speech recognition timed out."
-                    try: send(token, chat, notice)
-                    except Exception: pass
-                db.commit()
-            if args.once: break
+                _ingest_updates(token, db, allowed, updates)
+            if args.once:
+                break
+
+
+def run():
+    """Entry point for ``python -m ytdlp_tool.telegram_bot``: log why the bot stopped, then exit non-zero."""
+    try:
+        main()
+    except KeyboardInterrupt:
+        _log("bot stopped (interrupted)")
+        raise SystemExit(130) from None
+    except SystemExit:
+        raise
+    except Exception:
+        _log("bot crashed:\n" + traceback.format_exc())
+        raise SystemExit(1) from None
+
 
 if __name__ == "__main__":
-    main()
+    run()
