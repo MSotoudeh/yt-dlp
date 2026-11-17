@@ -319,13 +319,26 @@ def main():
     if not allowed: ap.error("YTDL_ALLOWED_CHAT_IDS is required; public execution disabled")
     root = Path(args.root)
     root.mkdir(parents=True, exist_ok=True)
+    poll_failures = 0
     with sqlite3.connect(root/"jobs.sqlite") as db:
         setup(db)
         while True:
             job = db.execute("SELECT update_id,chat,mode,url FROM jobs WHERE state='pending' ORDER BY update_id LIMIT 1").fetchone()
             if not job:
                 offset = db.execute("SELECT COALESCE(MAX(update_id),0)+1 FROM jobs").fetchone()[0]
-                updates = api(token, "getUpdates", {"offset": offset, "timeout": 20, "allowed_updates": '["message","callback_query"]'})
+                try:
+                    updates = api(token, "getUpdates", {"offset": offset, "timeout": 20, "allowed_updates": '["message","callback_query"]'})
+                    poll_failures = 0
+                except (OSError, ValueError, RuntimeError):
+                    # Transient network/Telegram errors must not kill the bot: the scheduled task
+                    # only restarts it 3 times, so back off and retry in-process instead.
+                    # (urllib errors never include the bot token in their text, but we log only the type.)
+                    poll_failures += 1
+                    print("getUpdates failed (attempt %d); retrying" % poll_failures, file=sys.stderr, flush=True)
+                    if args.once:
+                        raise
+                    time.sleep(min(60, 2 ** min(poll_failures, 6)))
+                    continue
                 for update in updates:
                     payload = update.get("message") or (update.get("callback_query") or {}).get("message") or {}
                     chat_id = str((payload.get("chat") or {}).get("id", ""))

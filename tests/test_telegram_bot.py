@@ -400,3 +400,31 @@ def test_caption_text_split_handles_only_emoji_and_no_character_loss(monkeypatch
     bot.send_caption_text("test", 123, content)
     assert "".join(sent) == content
     assert max(len(s.encode("utf-16-le")) // 2 for s in sent) <= 4096
+
+
+def test_polling_survives_transient_network_errors(monkeypatch, tmp_path):
+    """A getUpdates network failure must back off and retry, not kill the bot."""
+    import pytest
+    from ytdlp_tool import telegram_bot
+
+    calls = {"api": 0}
+    sleeps = []
+
+    def fake_api(token, method, params):
+        calls["api"] += 1
+        if calls["api"] == 1:
+            raise OSError("network down")
+        raise KeyboardInterrupt  # stop the otherwise endless loop
+
+    monkeypatch.setattr(telegram_bot, "api", fake_api)
+    monkeypatch.setattr(telegram_bot.time, "sleep", sleeps.append)
+    monkeypatch.setenv("YTDL_TELEGRAM_BOT_TOKEN", "123:test")
+    monkeypatch.setenv("YTDL_ALLOWED_CHAT_IDS", "1")
+    monkeypatch.setattr(
+        "sys.argv",
+        ["telegram_bot", "--model-dir", str(tmp_path), "--root", str(tmp_path / "state")],
+    )
+    with pytest.raises(KeyboardInterrupt):
+        telegram_bot.main()
+    assert calls["api"] == 2
+    assert sleeps == [2]
