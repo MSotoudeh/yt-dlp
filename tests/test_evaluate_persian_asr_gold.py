@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-SCRIPT=Path(__file__).resolve().parents[1]/"scripts"/"evaluate-persian-asr-gold.py"
+SCRIPT=Path(__file__).resolve().parents[1]/"scripts"/"asr-benchmarks"/"evaluate-persian-asr-gold.py"
 
 def _load():
     spec=importlib.util.spec_from_file_location("persian_asr_gold",SCRIPT)
