@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Repository prepared for public readers: new README, CONTRIBUTING, SECURITY, MIT LICENSE, `docs/HISTORY.md`, docs index,
+  English Digital Concert Hall guide (Persian kept as `docs/digital-concert-hall.fa.md`), CLI reference in `docs/cli-reference.md`.
+- ASR benchmark tools moved to `scripts/asr-benchmarks/`; finished one-off benchmark orchestration scripts removed;
+  dated benchmark logs and implemented plans moved to `docs/archive/`. `Install-BotTask.ps1` renamed `install-bot-task.ps1`.
+  No code behaviour changed.
+
 ## 0.5.0 - 2026-11-17
 
 ### Added
@@ -23,7 +32,7 @@
   `docs/digital-concert-hall.md`.
 - Telegram bot: `--log-file`, job lifecycle logging, crash tracebacks in the log, and a launcher that
   writes `bot.log` / `bot.out.log` / `bot.stderr.log` with rotation.
-- `scripts/Install-BotTask.ps1` (renamed `scripts/install-bot-task.ps1` in 0.5.1) to register or repair the scheduled task with robust restart settings.
+- `scripts/Install-BotTask.ps1` (now `scripts/install-bot-task.ps1`) to register or repair the scheduled task with robust restart settings.
 - `docs/operations.md`, `docs/digital-concert-hall.md`, `docs/digital-concert-hall-plan-review.md`.
 - ruff configuration and `ruff` in the `dev` extra.
 
