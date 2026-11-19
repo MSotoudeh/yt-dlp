@@ -1,151 +1,134 @@
-# دانلود Digital Concert Hall
+# Digital Concert Hall downloads
 
-> **وضعیت (۲۰۲۶-۱۱-۱۷):** پیاده‌سازی کامل و در محیط آزمایشی راستی‌آزمایی شده (۲۴۵+ تست واحد، و یک آزمون end-to-end
-> با Chromium واقعی، افزونه‌ی واقعی، host واقعی و کارگر واقعی روی سایت **جعلی با توکن جعلی**).
-> **دانلود واقعی با حساب شما هنوز اجرا نشده** — کیفیت، DRM و عمر توکن فقط با «مرحله‌ی آزمایش» پایین مشخص می‌شود.
-> پیشینه و دلیل طراحی: [مرور پلن](digital-concert-hall-plan-review.md).
+Download concerts and films from **your own** [Digital Concert Hall](https://www.digitalconcerthall.com) (DCH) account on this computer, either from a terminal or by asking Claude Desktop / Codex / ChatGPT. Persian version: [digital-concert-hall.fa.md](digital-concert-hall.fa.md).
 
-## دو روش
+> **Status (2026-11-17):** implemented and tested with 245 unit tests plus an end-to-end test that drives a real Chromium, the real extension, the real host and the real worker against a **fake** site with a **fake** token. A real download with a real account has **not** been run yet, so quality, DRM behaviour and token lifetime are still unknown (see "First real test" below). Design background: [archived plan](archive/digital-concert-hall-plan.md) and [plan review](archive/digital-concert-hall-plan-review.md) (both in Persian).
 
-| | روش الف: پل Brave (پیشنهادی) | روش ب: توکن دستی |
+## Two ways to use it
+
+| | A: Brave bridge (recommended) | B: manual token |
 | --- | --- | --- |
-| دستور | `dch-start` یا ابزار MCP `dch_start` | `dch` |
-| توکن را چه کسی می‌گیرد | افزونه‌ی Brave، خودکار | شما، با کپی از DevTools |
-| مناسب | استفاده با Codex / ChatGPT / Claude Desktop | یک بار آزمایش یا اسکریپت |
-| اجرا | پس‌زمینه، با وضعیت قابل پیگیری | پیش‌زمینه |
+| Command | `dch-start` / `dch-status`, or MCP tool `dch_start` | `dch` |
+| Who fetches the token | the browser extension, automatically | you, copied from DevTools |
+| Best for | Claude Desktop, Codex, ChatGPT Desktop | a one-off test or a script |
+| Runs | in the background, with job status | in the foreground |
 
-## روش الف: پل Brave
+## A: Brave bridge
 
-### معماری
+### Architecture
 
 ```text
-Codex / ChatGPT Desktop / Claude Desktop
-        │  MCP (stdio): dch_start · dch_status · dch_jobs     ← هیچ ابزاری توکن نمی‌گیرد یا برنمی‌گرداند
+Claude Desktop / Codex / ChatGPT Desktop
+        │ MCP over stdio: dch_start · dch_status · dch_jobs   (no tool accepts or returns a token)
         ▼
-  ytdlp_tool.dch_mcp ──(loopback 127.0.0.1 + راز تصادفی)──► ytdlp_tool.dch_host  (Native Messaging)
-                                                                  │ «get_token»
+  ytdlp_tool.dch_mcp ──(127.0.0.1 + random shared secret)──► ytdlp_tool.dch_host  (native-messaging host)
+                                                                  │ "get_token"
                                                                   ▼
-                                              افزونه‌ی Brave (فقط https://www.digitalconcerthall.com/*)
-                                              از localStorage خود سایت می‌خواند و پاسخ می‌دهد
-                                                                  │ توکن
+                                             Brave extension (only https://www.digitalconcerthall.com/*)
+                                             reads the site's own localStorage and answers
+                                                                  │ token
                                                                   ▼
-       host ──(stdin یک پردازش جدا)──► dch-worker  ─► yt-dlp  ─► فایل‌ها + status.json
+          host ──(stdin of a separate process)──► dch worker ──► yt-dlp ──► files + status.json
 ```
 
-توکن فقط در مسیر «افزونه ← host ← stdin کارگر» می‌گذرد؛ در آرگومان، متغیر محیطی، فایل، لاگ، کلیپ‌بورد، پاسخ MCP و متن گفتگو
-**نمی‌آید** (با آزمون‌های واحد و آزمون مرورگر واقعی بررسی شده؛ مثلاً `grep` توکن در پوشه‌ی وضعیت چیزی پیدا نمی‌کند).
+The token only travels extension → host → worker stdin. It never appears in arguments, environment variables, files, logs, the clipboard, MCP responses or the chat. Unit tests and the browser test check this (for example, the token cannot be found anywhere in the state directory).
 
-### نصب (یک‌بار)
+### Install (once, Windows)
 
-۱. روی Ops (PowerShell عادی، بدون admin):
+1. In a normal (non-admin) PowerShell in the repository:
 
-```powershell
-cd C:\GitHub\yt-dlp
-python -m ytdlp_tool.dch_install install        # host + ثبت برای Brave + تنظیم Claude Desktop و Codex (با backup)
-python -m ytdlp_tool.dch_install status
-```
+   ```powershell
+   python -m ytdlp_tool.dch_install install   # host files, Brave registration, Claude Desktop + Codex config (with backups)
+   python -m ytdlp_tool.dch_install status
+   ```
 
-۲. در Brave: `brave://extensions` ← **Developer mode** ← **Load unpacked** ← پوشه‌ی `C:\GitHub\yt-dlp\extensions\dch-bridge`.
-شناسه‌ی افزونه باید `bcohebdjklmiaddlkbemjfioeloajdlj` باشد (ثابت است؛ host فقط همین افزونه را می‌پذیرد).
+   This writes the host launcher and manifest to `%LOCALAPPDATA%\ytdlp-tool\dch\native-host\`, registers `com.ytdlp_tool.dch` under `HKCU\Software\BraveSoftware\Brave-Browser\NativeMessagingHosts`, and adds an MCP server named `ytdlp-dch` to Claude Desktop and Codex. The launcher points at this checkout's `src/` folder, so do not move the checkout after installing (or re-run `install`). Use `--browsers brave,chrome,edge` for other Chromium browsers and `--no-claude` / `--no-codex` to skip those clients.
+2. In Brave: `brave://extensions` → **Developer mode** → **Load unpacked** → select `extensions/dch-bridge` in this repository. The extension ID must be `bcohebdjklmiaddlkbemjfioeloajdlj`; it is fixed by the public key in `manifest.json`, and the host only accepts that ID.
+3. Fully quit and reopen Claude Desktop and Codex so they load the MCP server. The ChatGPT plugin (`plugins/ytdl`, 0.2.9) documents the same workflow.
+4. Sign in to digitalconcerthall.com in Brave and leave the concert page open.
 
-۳. Claude Desktop و Codex را یک‌بار ببندید و باز کنید تا MCP جدید را بخوانند. (ChatGPT Desktop: پلاگین `ytdl` نسخه‌ی ۰.۲.۹
-دستورالعمل را دارد و از همان مسیر CLI/MCP استفاده می‌کند.)
+Uninstall: `python -m ytdlp_tool.dch_install uninstall`, then remove the extension from Brave.
 
-۴. در Brave وارد digitalconcerthall.com شوید (همیشه همین است) و صفحه‌ی کنسرت را باز بگذارید.
+### Use
 
-حذف: `python -m ytdlp_tool.dch_install uninstall` و حذف افزونه از Brave.
-
-### استفاده
-
-در گفتگو بگویید: «کنسرت Digital Concert Hall بازشده در Brave را دانلود کن» یا آدرس را بدهید. یا از ترمینال:
+Ask the assistant "download the Digital Concert Hall concert open in Brave", or give it the URL. From a terminal:
 
 ```powershell
-python -m ytdlp_tool dch-start --list                       # بخش‌ها و بهترین کیفیت؛ چیزی دانلود نمی‌شود
-python -m ytdlp_tool dch-start                              # تب کنسرت باز را دانلود کن
+python -m ytdlp_tool dch-start --list            # parts and best available quality; downloads nothing
+python -m ytdlp_tool dch-start                   # download the open concert tab
 python -m ytdlp_tool dch-start "https://www.digitalconcerthall.com/en/concert/56205" --item 2
-python -m ytdlp_tool dch-status                             # کارهای اخیر
-python -m ytdlp_tool dch-status JOB_ID                      # یک کار
+python -m ytdlp_tool dch-status                  # recent jobs
+python -m ytdlp_tool dch-status JOB_ID           # one job
 ```
 
-* بدون آدرس: اگر دقیقاً یک تب کنسرت/فیلم/اثر باز باشد (یا فقط یکی فعال باشد) همان انتخاب می‌شود. اگر چند تب باشد،
-  افزونه خطای روشن می‌دهد و آدرس را می‌خواهد (تب فعال ChatGPT یا هر تب غیر DCH هرگز انتخاب نمی‌شود).
-* خروجی: `output\chatgpt\digital-concert-hall\<عنوان> [<شناسه>]\NN - <بخش> [<id>].<ext>` (قابل تغییر با `YTDLP_DCH_OUTPUT`).
-  فایل موجود بازنویسی نمی‌شود.
-* وضعیت و لاگ: `%LOCALAPPDATA%\ytdlp-tool\dch\jobs\<id>\status.json` و `host.log` (بدون توکن).
+- Without a URL: if exactly one concert, film or work tab is open (or only one is active) it is used. With several, the extension refuses and asks for the URL. A ChatGPT tab or any non-DCH tab is never picked.
+- Output: `output\chatgpt\digital-concert-hall\<title> [<id>]\NN - <part> [<id>].<ext>` (override with `YTDLP_DCH_OUTPUT`). Existing files are not overwritten.
+- Status and logs: `%LOCALAPPDATA%\ytdlp-tool\dch\jobs\<id>\status.json` and `%LOCALAPPDATA%\ytdlp-tool\dch\host.log` (override the base with `YTDLP_DCH_STATE`). Neither contains the token.
 
-### رفتار کارهای طولانی (دانلود ممکن است دقایق تا ساعت‌ها طول بکشد)
+### Long downloads
 
-* کارگر مستقل و جداشده از host/مرورگر است؛ بستن گفتگو یا مرورگر دانلود را قطع نمی‌کند.
-* `status.json` شامل pid، زمان شروع، سقف زمان، وضعیت (`running`/`done`/`failed`)، خطای پاک‌سازی‌شده و فایل‌های نهایی است.
-* سقف زمان پیش‌فرض ۶ ساعت است؛ پس از آن خود کارگر شکست را ثبت می‌کند و فایل‌های موقت `.part` را پاک می‌کند.
-* `done` فقط وقتی ثبت می‌شود که همه‌ی فایل‌های گزارش‌شده موجود و غیرخالی باشند. کارگر مرده/کشته‌شده `failed` گزارش می‌شود، نه `running`.
-* درخواست یکسانِ در حال اجرا دوباره شروع نمی‌شود (`duplicate`)؛ درخواست یکسانِ تمام‌شده نتیجه‌ی قبلی را برمی‌گرداند (`already_done`).
-* دستیار پس از شروع باید **متوقف شود** و فقط با درخواست بعدی شما، یک‌بار وضعیت را بخواند (بدون polling).
+- The worker is detached from the host and the browser; closing the chat or the browser does not stop it.
+- `status.json` holds the pid, start time, time limit, state (`running` / `done` / `failed`), a sanitized error and the final files.
+- The default time limit is 6 hours. After that the worker records a failure and deletes `.part` files.
+- `done` is recorded only when every reported file exists and is non-empty. A dead or killed worker is reported as `failed`, never `running`.
+- The same request while one is running returns `duplicate`; the same finished request returns `already_done`.
+- Assistants are instructed to stop after starting a job and to check status once, only when asked (no polling).
 
-### مجوزهای افزونه (تصمیم باز پلن، اکنون بسته شده)
+### Extension permissions
 
-مجوز دائمی **محدود به یک دامنه**: `https://www.digitalconcerthall.com/*` + `scripting` + `nativeMessaging` + `alarms` (اتصال مجدد).
-`activeTab` انتخاب نشد چون «تب باز را تشخیص بده» بدون کلیک ممکن نمی‌شد. افزونه به سایت دیگری، به `tabs` عمومی یا
-شبکه دسترسی ندارد و فقط به host با نام `com.ytdlp_tool.dch` جواب می‌دهد (و آن host فقط به همین افزونه).
-هر پردازش هم‌کاربرِ محلی می‌تواند از طریق پل «شروع دانلود یک URL معتبر DCH» را بخواهد ولی هرگز به **خود توکن** نمی‌رسد.
+Permanent permission for **one domain only**: `https://www.digitalconcerthall.com/*`, plus `scripting`, `nativeMessaging` and `alarms` (to reconnect). `activeTab` was rejected because it cannot find the open tab without a click. The extension has no general `tabs` or network access and only talks to the host `com.ytdlp_tool.dch`, which only talks to this extension. Any local process running as the same user can ask the bridge to start a download of a valid DCH URL, but can never obtain the token itself.
 
-## روش ب: توکن دستی (`dch`)
+## B: Manual token (`dch`)
 
-در Brave: DevTools ← Application ← Local Storage ← `https://www.digitalconcerthall.com` ← مقدار `access_token_production`.
-روی Ops (توکن با ورودی مخفی پرسیده می‌شود؛ چیزی نمایش داده نمی‌شود):
+In Brave: DevTools → Application → Local Storage → `https://www.digitalconcerthall.com` → value of `access_token_production`. Then (the token is read from a hidden prompt and nothing is echoed):
 
 ```powershell
 ytdlp-tool dch "https://www.digitalconcerthall.com/en/concert/56205" --list
 ytdlp-tool dch "https://www.digitalconcerthall.com/en/concert/56205" --item 2 --format-selector "bv*[height<=1080]+ba/b"
-# اسکریپت: توکن از stdin (هرگز آرگومان یا متغیر محیطی نه)
+# from a script: token on stdin, never as an argument or environment variable
 ... | ytdlp-tool dch URL --token-stdin
 ```
 
-## تضمین‌های امنیتی و راستی‌آزمایی
+## Security guarantees
 
-| قاعده | چگونه تأمین و آزموده شده |
+| Rule | How it is enforced and tested |
 | --- | --- |
-| توکن در argv / env / فایل / لاگ / پاسخ MCP نیست | stdin کارگر؛ تست‌ها وجود نداشتن توکن در همه‌ی فایل‌های وضعیت، پاسخ‌ها و خطاها را بررسی می‌کنند |
-| توکن روی دیسک (کش yt-dlp) ثبت نمی‌شود | `cachedir=False`؛ با extractor واقعی آزموده شد: بدون آن `tokens.json` ساخته می‌شود، با آن نه |
-| پل فقط برای کاربر محلی | فقط `127.0.0.1`، راز تصادفی ۲۵۶بیتی در فایل کاربر، مقایسه‌ی زمان‌ثابت؛ بدون راز هرگز از افزونه توکن نمی‌خواهد |
-| فقط افزونه‌ی ما با host حرف بزند | `allowed_origins` مرورگر + بررسی دوباره‌ی origin در host؛ شناسه‌ی افزونه با کلید manifest تطبیق داده می‌شود (تست) |
-| فقط این سایت | URL باید `https` + دامنه‌ی DCH + مسیر `film/concert/work`؛ بدون user:pass؛ افزونه فقط به همین دامنه مجوز دارد |
-| ابزار MCP محدود | فقط start/status/jobs؛ بدون اجرای فرمان، بدون خواندن فایل دلخواه، بدون توکن؛ `start` به‌عنوان عملیات نوشتنی علامت‌گذاری شده |
-| توکن منقضی بی‌جهت مصرف نمی‌شود | انقضای JWT پیش از هر تماس بررسی می‌شود |
-| بدون refresh token | طبق پلن؛ پس توکن عمر محدود دارد (پایین) |
+| Token not in argv, environment, files, logs or MCP replies | worker stdin only; tests search every state file, reply and error for it |
+| Token not written by yt-dlp's cache | `cachedir=False`; verified against the real extractor (without it, `tokens.json` is created) |
+| Bridge is local-only | binds `127.0.0.1`, 256-bit random secret in a per-user file, constant-time comparison |
+| Only our extension talks to the host | browser `allowed_origins` plus a second origin check in the host; the ID is tested against the manifest key |
+| Only this site | URL must be `https`, the DCH domain and a `film` / `concert` / `work` path, without user:password |
+| Narrow MCP surface | only start / status / jobs; no shell, no arbitrary file access, no token; `start` is marked as a write |
+| Expired tokens are not used | JWT expiry is checked before every call |
+| No refresh token | by design, so a token has a limited lifetime (below) |
 
-## محدودیت‌ها و عدم‌قطعیت‌ها
+## Limitations
 
-* **عمر توکن نامعلوم است.** کنسرت چندبخشی ممکن است وسط کار با «token rejected» بایستد؛ بخش‌های کامل می‌مانند و با `--item N`
-  ادامه می‌دهید. (با refresh token این مشکل حل می‌شد ولی پلن آن را عمداً کنار گذاشته است.)
-* کیفیت: extractor خودش می‌گوید جریان‌های ۴K/FLAC دیگر در دسترس نیست؛ `--list` کیفیت واقعی حساب را نشان می‌دهد.
-* محتوای DRM یا بدون دسترسی با پیام صریح گزارش می‌شود؛ دور زدن آن‌ها بخشی از این ابزار نیست.
-* به `ffmpeg` در PATH نیاز دارد. مرحله‌ی دانلود روی Ops نیازمند روشن بودن Ops، Brave و شبکه است.
-* مسیر **وب** (ChatGPT/Claude تحت وب) پیاده نشده: توکن و فایل نباید از Ops خارج شوند و این نیازمند MCP راه‌دور احراز‌شده
-  است که بدون نیاز واقعی ساخته نشد (پلن مرحله ۶).
-* شرایط استفاده‌ی سایت درباره‌ی دانلود را بررسی نکرده‌ام؛ مسئولیت استفاده با شماست و فقط برای محتوایی است که حساب شما
-  مجاز به پخش آن است.
+- **Token lifetime is unknown.** A multi-part concert may stop with "token rejected" part-way; finished parts stay, and `--item N` resumes.
+- Quality: the yt-dlp extractor notes that 4K / FLAC streams are no longer offered; `--list` shows what your account really gets.
+- DRM-protected or unavailable content is reported as such. Bypassing DRM is out of scope.
+- Needs `ffmpeg` on `PATH`, and the computer, Brave and the network must be on.
+- Web versions of ChatGPT / Claude are not supported: the token and files must not leave this computer, which would need an authenticated remote MCP server (plan phase 6, deliberately not built).
+- The site's terms of use regarding downloads have not been reviewed. You are responsible for using this only for content your account may play.
 
-## عیب‌یابی
+## Troubleshooting
 
-| نشانه | بررسی |
+| Symptom | Check |
 | --- | --- |
-| «The Brave bridge is not running» | Brave باز باشد و افزونه فعال؛ `python -m ytdlp_tool.dch_install status`؛ در `brave://extensions` برای افزونه روی service worker بزنید و خطای اتصال را ببینید |
-| «No Digital Concert Hall tab is open» | سایت را در Brave باز و وارد شوید |
-| «N concert pages are open» | آدرس را صریح بدهید |
-| «Not signed in … no access token» | وارد سایت شوید؛ صفحه را reload کنید |
-| «Access token has expired» / «rejected the token» | صفحه‌ی سایت را reload کنید (توکن تازه می‌شود) و دوباره شروع کنید |
-| Claude Desktop ابزار را نشان نمی‌دهد | بعد از `install` برنامه را کامل ببندید و باز کنید |
-| بررسی لاگ host | `%LOCALAPPDATA%\ytdlp-tool\dch\host.log` |
+| "The Brave bridge is not running" | Brave open and extension enabled; `python -m ytdlp_tool.dch_install status`; in `brave://extensions` open the extension's service worker and look for connection errors |
+| "No Digital Concert Hall tab is open" | open the site in Brave and sign in |
+| "N concert pages are open" | pass the URL explicitly |
+| "Not signed in … no access token" | sign in, reload the page |
+| "Access token has expired" / "rejected the token" | reload the site page (refreshes the token) and start again |
+| Claude Desktop does not show the tools | fully quit and reopen it after `install` |
+| Host log | `%LOCALAPPDATA%\ytdlp-tool\dch\host.log` |
 
-## مرحله‌ی آزمایش (یک‌بار، چند دقیقه)
+## First real test (a few minutes, still to do)
 
-۱. `dch-start --list` ← بخش‌ها و کیفیت واقعی را ببینید.
-۲. `dch-start --item 1` روی کوتاه‌ترین بخش ← با `dch-status` پیگیری کنید و فایل نهایی را باز کنید.
-۳. زمان بین «reload صفحه» تا «خطای انقضا» را یادداشت کنید (عمر توکن).
+1. `dch-start --list`: check the parts and the real quality.
+2. `dch-start --item 1` on the shortest part, follow with `dch-status`, open the final file.
+3. Note the time from reloading the page to an expiry error (the token lifetime).
 
-## آزمون end-to-end (برای توسعه‌دهنده)
+## End-to-end test (developers)
 
-`tests/e2e/run_dch_e2e.sh` (به node + playwright + Xvfb نیاز دارد): Chromium واقعی با افزونه‌ی واقعی، صفحه‌ی جعلی
-digitalconcerthall.com با توکن جعلی، host ثبت‌شده، سپس `dch-start` ← کارگر. خروجی مورد انتظار: `E2E PASSED`
-(کارگر توکن را از مرورگر می‌گیرد، extractor واقعی آن را با سرور واقعی امتحان می‌کند و چون جعلی است ۴۰۱ می‌گیرد).
+`tests/e2e/run_dch_e2e.sh` (needs Node, Playwright and Xvfb) starts a real Chromium with the real extension on a fake digitalconcerthall.com page with a fake token, registers the host, then runs `dch-start` and the worker. Expected output: `E2E PASSED` (the worker gets the token from the browser, the real extractor tries it against the real server and receives 401 because it is fake).

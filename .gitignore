@@ -3,14 +3,29 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.ruff_cache/
 .venv/
+build/
+dist/
 
 # Runtime output
 output/*
 !output/.gitkeep
+*.log
+
+# Secrets
+secrets/
+.secrets/
+.env
+.env.*
+!.env.example
+
+# Worktrees
+.worktrees/
 
 # Editor / OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+desktop.ini

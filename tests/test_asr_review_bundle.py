@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def load_builder():
-    src=Path(__file__).resolve().parents[1]/"scripts"/"build-persian-asr-offline-review.py"
+    src=Path(__file__).resolve().parents[1]/"scripts"/"asr-benchmarks"/"build-persian-asr-offline-review.py"
     spec=importlib.util.spec_from_file_location("review_builder",src)
     module=importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

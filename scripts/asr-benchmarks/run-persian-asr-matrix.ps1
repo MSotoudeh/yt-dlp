@@ -25,7 +25,7 @@ foreach($row in $tests){
     try { $state=Get-Content $file -Raw -Encoding UTF8|ConvertFrom-Json; if($state.status -eq 'complete'){Write-Output "SKIP_COMPLETE $id $device";continue} } catch {}
   }
   Write-Output "RUN $id $device $(Get-Date -Format o)"
-  & $python "$root\scripts\run-persian-asr-matrix.py" --model $id --device $device --audio $wav --output $base
+  & $python "$root\scripts\asr-benchmarks\run-persian-asr-matrix.py" --model $id --device $device --audio $wav --output $base
   Write-Output "END $id $device EXIT=$LASTEXITCODE $(Get-Date -Format o)"
 }
 Write-Output "ALL_ATTEMPTS_FINISHED $(Get-Date -Format o)"
