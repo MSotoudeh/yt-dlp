@@ -66,7 +66,7 @@ def hf_download(repo_id,allow):
     from huggingface_hub import snapshot_download
     return Path(snapshot_download(repo_id=repo_id,allow_patterns=allow,max_workers=2))
 def benchmark(label,model_path,compute="int8_float16"):
-    run([ASR_PY,REPO/"scripts"/"benchmark-new-persian-ct2-gpu.py",
+    run([ASR_PY,REPO/"scripts"/"asr-benchmarks"/"benchmark-new-persian-ct2-gpu.py",
          "--label",label,"--model-path",model_path,
          "--audio",SRC,"--output",OUTPUT,
          "--compute-type",compute],"gpu-"+label,timeout=10000)

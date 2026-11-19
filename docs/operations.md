@@ -9,7 +9,7 @@ the development checks. Paths are for the Ops machine (`C:\GitHub\yt-dlp`).
 | --- | --- |
 | Scheduled task | `YTDLP-Independent-Telegram-Bot` (SYSTEM, at startup) |
 | Launcher | `scripts\start-telegram-bot.ps1` |
-| Task installer / repair | `scripts\Install-BotTask.ps1` (elevated PowerShell, safe to re-run) |
+| Task installer / repair | `scripts\install-bot-task.ps1` (elevated PowerShell, safe to re-run) |
 | State directory | `C:\ProgramData\ytdlp-bot\state` (`jobs.sqlite`, `downloads\`, logs) |
 | Secrets | `C:\ProgramData\ytdlp-bot\telegram-token`, `...\allowed-chat-ids` (never commit these) |
 
@@ -28,7 +28,7 @@ Stop-ScheduledTask  -TaskName 'YTDLP-Independent-Telegram-Bot'
 Get-Content C:\ProgramData\ytdlp-bot\state\bot.log -Tail 50
 
 # (re)create the task with the recommended restart settings
-powershell -ExecutionPolicy Bypass -File C:\GitHub\yt-dlp\scripts\Install-BotTask.ps1
+powershell -ExecutionPolicy Bypass -File C:\GitHub\yt-dlp\scripts\install-bot-task.ps1
 ```
 
 ### Logs

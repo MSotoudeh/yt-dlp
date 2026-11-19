@@ -23,7 +23,7 @@
   `docs/digital-concert-hall.md`.
 - Telegram bot: `--log-file`, job lifecycle logging, crash tracebacks in the log, and a launcher that
   writes `bot.log` / `bot.out.log` / `bot.stderr.log` with rotation.
-- `scripts/Install-BotTask.ps1` to register or repair the scheduled task with robust restart settings.
+- `scripts/Install-BotTask.ps1` (renamed `scripts/install-bot-task.ps1` in 0.5.1) to register or repair the scheduled task with robust restart settings.
 - `docs/operations.md`, `docs/digital-concert-hall.md`, `docs/digital-concert-hall-plan-review.md`.
 - ruff configuration and `ruff` in the `dev` extra.
 

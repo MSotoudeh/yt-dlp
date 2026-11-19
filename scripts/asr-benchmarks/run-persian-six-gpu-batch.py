@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT=Path(r"C:\GitHub\yt-dlp")
 PY=ROOT/"output"/"chatgpt"/"asr-comparison-venv"/"Scripts"/"python.exe"
-ENTRY=ROOT/"scripts"/"benchmark-persian-six-gpu.py"
+ENTRY=ROOT/"scripts"/"asr-benchmarks"/"benchmark-persian-six-gpu.py"
 OUT=Path(r"C:\ProgramData\ytdlp-bot\asr-six-gpu-20261021")
 BASE=Path(r"C:\ProgramData\ytdlp-bot\asr-four-models")
 OTHER=Path(r"C:\ProgramData\ytdlp-bot\asr-three-gpu-20261009")
