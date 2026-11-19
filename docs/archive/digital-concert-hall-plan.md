@@ -4,14 +4,14 @@
 **وضعیت:** پیاده‌سازی‌شده و آزمون‌شده در محیط آزمایشی؛ دانلود واقعی با حساب کاربر هنوز اجرا نشده است (بلوک زیر).  
 **پروژه میزبان:** `C:\GitHub\yt-dlp`
 
-> **به‌روزرسانی ۲۰۲۶-۱۱-۱۷:** این پلن بررسی شد؛ نتیجه در [docs/digital-concert-hall-plan-review.md](../docs/digital-concert-hall-plan-review.md).
+> **به‌روزرسانی ۲۰۲۶-۱۱-۱۷:** این پلن بررسی شد؛ نتیجه در [docs/digital-concert-hall-plan-review.md](digital-concert-hall-plan-review.md).
 > **وضعیت اجرا:** مراحل ۲ تا ۵ پیاده و آزمون‌شده‌اند (۲۴۵ تست واحد + آزمون end-to-end با Chromium واقعی روی سایت و توکن جعلی)،
 > نصب‌شده روی Ops (host برای Brave ثبت شد؛ سرور MCP در Claude Desktop و Codex اضافه شد). مرحله‌ی ۶ (وب) عمداً ساخته نشد.
 > **باقی‌مانده فقط با شما:** بار کردن افزونه در Brave (یک‌بار)، restart کلاینت‌ها و «مرحله‌ی آزمایش» با حساب واقعی
-> (کیفیت، DRM، عمر توکن). جزئیات: [docs/digital-concert-hall.md](../docs/digital-concert-hall.md).
+> (کیفیت، DRM، عمر توکن). جزئیات: [docs/digital-concert-hall.md](../digital-concert-hall.fa.md).
 > نسخه‌ی اولیه‌ی این یادداشت: دستور `ytdlp-tool dch` (توکن از prompt مخفی،
-> فقط در حافظه) پیاده شد؛ راهنما در [docs/digital-concert-hall.md](../docs/digital-concert-hall.md). سپس به دستور شما کل پلن
-> اجرا شد (جدول «اجرای پلن» در [مرور پلن](../docs/digital-concert-hall-plan-review.md)).
+> فقط در حافظه) پیاده شد؛ راهنما در [docs/digital-concert-hall.md](../digital-concert-hall.fa.md). سپس به دستور شما کل پلن
+> اجرا شد (جدول «اجرای پلن» در [مرور پلن](digital-concert-hall-plan-review.md)).
 
 ## ۱. صورت مسئله
 

@@ -1,6 +1,6 @@
-# Independent bot: @You_TubeDL_bot
+# Telegram bot reference
 
-Separate from Happ and @Youtube_Baz_bot.
+The private bot (`@You_TubeDL_bot`, independent of the owner's other bots) exposes the toolkit to an allowlisted Telegram chat. Service operation, logs and recovery: [operations.md](operations.md). Configuration names: [../.env.example](../.env.example).
 
 This is an **Ops-hosted long-polling service**, not Cloudflare serverless. On 2026-10-27 the existing Windows Scheduled Task `YTDLP-Independent-Telegram-Bot` was migrated from interactive logon to **SYSTEM + AtStartup** to run without a user session. The previous task XML is preserved at `C:\\ProgramData\\ytdlp-bot\\state\\service-config-backup\\task-before-system.xml`. After an explicit start it reported **Running**, with its Python parent/child processes present. Initial outbound Telegram `sendDocument` and bot identity were verified against the user's existing private chat; a new real user click from Telegram after deployment is still required to prove inbound callback-to-file end to end. Uses the isolated asr-venv, ffmpeg and cached Whisper large-v3.
 
@@ -21,7 +21,7 @@ $env:YTDL_ALLOWED_CHAT_IDS = '<YOUR_PRIVATE_TELEGRAM_CHAT_ID>'
 - Explicit `/audio URL`, `/video URL`, `/subs URL`, and `/transcribe URL` retain their meanings. `/transcript URL` runs the original automatic format selection. `/txt` delivers only UTF-8 TXT; `/srt` delivers only SRT with YouTube's original cue timestamps (or ASR times if native captions are absent).
 - Bot runs the ASR fallback with the existing isolated ASR Python environment and cached `large-v3` model. Successful caption runs avoid audio/video downloads and model inference altogether.
 
-Never commit token or reveal it in logs. The existing bot token remains in the protected local file. The scheduled launch script reads `C:\\ProgramData\\ytdlp-bot\\allowed-chat-ids` with restricted SYSTEM/admin ACLs; this presently permits only the one previously established private chat, not public strangers (unlike the old `*` setting). Ops-local SQLite persists received jobs and prevents duplicate ingestion. It does **not** retain messages sent while Ops is offline. Video/audio and transcription files are uploaded with Telegram sendDocument when each file is below the direct upload limit (~50 MB); large files are reported as too large. New inbound Instagram choice-to-file delivery remains unverified until a real Telegram user sends a link and taps a choice after service startup. Next steps: upload media safely, improve limits and retries, lock down admin access, add Cloudflare Worker+Queue (confirm costs first), install managed service, real end-to-end testing and recovery.
+Never commit token or reveal it in logs. The existing bot token remains in the protected local file. The scheduled launch script reads `C:\\ProgramData\\ytdlp-bot\\allowed-chat-ids` with restricted SYSTEM/admin ACLs; this presently permits only the one previously established private chat, not public strangers (unlike the old `*` setting). Ops-local SQLite persists received jobs and prevents duplicate ingestion. It does **not** retain messages sent while Ops is offline. Video/audio and transcription files are uploaded with Telegram sendDocument when each file is below the direct upload limit (~50 MB); large files are reported as too large. New inbound Instagram choice-to-file delivery remains unverified until a real Telegram user sends a link and taps a choice after service startup.
 
 ## Instagram post/reel text and speech
 
